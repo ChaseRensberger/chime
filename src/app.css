@@ -1,0 +1,52 @@
+@reference "./globals.css";
+
+.audio-visualization {
+  width: min(100%, 32rem);
+  color: var(--color-link);
+}
+.audio-visualization rect {
+  fill: currentColor;
+}
+.audio-processing rect {
+  transform-origin: center;
+  animation: processing-wave 1.4s ease-in-out infinite alternate;
+}
+@keyframes processing-wave {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(6);
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply mx-auto flex min-h-dvh w-full max-w-5xl flex-col;
+  }
+
+  .section-label {
+    @apply text-xs font-medium uppercase tracking-widest text-muted-foreground;
+  }
+
+  .settings-section {
+    @apply flex flex-col gap-4 py-5;
+  }
+
+  .supporting {
+    @apply text-xs leading-5 text-muted-foreground;
+  }
+
+  kbd {
+    @apply inline-flex min-h-6 items-center justify-center rounded-sm border border-input bg-card px-1.5 text-xs text-foreground;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-processing rect {
+    animation: none;
+  }
+  .animate-spin {
+    animation: none;
+  }
+}

@@ -1,0 +1,8 @@
+[package]
+name = "chime-engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false }
