@@ -8,14 +8,19 @@
     "#lib/*": "./src/lib/*.ts"
   },
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1",
-    "check": "tsc --noEmit",
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "preview": "vite --host 127.0.0.1",
+    "build:web": "tsc --noEmit && vite build",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run version:check",
+    "typecheck": "tsc --noEmit",
     "lint": "oxlint . --deny-warnings",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
-    "test": "bun test",
+    "format": "oxfmt --write . && cargo fmt --manifest-path src-tauri/Cargo.toml && cargo fmt --manifest-path crates/chime-engine/Cargo.toml",
+    "format:check": "oxfmt --check . && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo fmt --manifest-path crates/chime-engine/Cargo.toml --check",
+    "test": "bun test && bun run test:rust",
+    "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml && cargo test --locked --manifest-path crates/chime-engine/Cargo.toml --target-dir src-tauri/target",
+    "bundle": "tauri build",
+    "version:check": "bun scripts/check-version.ts",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build"
   },
@@ -43,5 +48,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
-  }
+  },
+  "packageManager": "bun@1.4.4"
 }

@@ -1,7 +1,8 @@
 import { CaretDown, Desktop, Moon, Sun } from "@phosphor-icons/react";
 import { Button } from "#components/core/button";
 import { NativeSelect } from "#components/core/native-select";
-import type { Appearance, Settings, Shortcut } from "../lib/settings";
+import type { Appearance, Settings } from "../lib/settings";
+import { ShortcutHint } from "./ShortcutHint";
 import type { DemoOutcome } from "../engine/types";
 import { useEffect, useRef, useState } from "react";
 
@@ -74,28 +75,13 @@ export function SettingsPage({
                 : "Uses your system's default input. Audio stays in memory."}
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor="shortcut">In-window shortcut</label>
-            <NativeSelect
-              id="shortcut"
-              value={settings.shortcut}
-              onChange={(event) =>
-                onChange({ ...settings, shortcut: event.target.value as Shortcut })
-              }
-              aria-describedby="shortcut-help"
-            >
-              <option value="Control+Shift+Space">Ctrl + Shift + Space</option>
-              <option value="Control+Shift+Period">Ctrl + Shift + .</option>
-            </NativeSelect>
-            <p id="shortcut-help" className="supporting">
-              Works while Chime is focused on the Dictation page.
-            </p>
-          </div>
           {!demo && (
             <div className="flex flex-col gap-2">
-              <p>Desktop shortcut</p>
+              <p>Shortcut</p>
+              <ShortcutHint />
               <p className="supporting">
-                In COSMIC Settings → Keyboard → Custom Shortcuts, assign a key to this command:
+                In COSMIC Settings → Keyboard → Custom Shortcuts, assign Alt+Space to this command.
+                Manage the binding there.
               </p>
               <code className="select-text break-all rounded-sm border p-2 text-xs">
                 {shortcutCommand}

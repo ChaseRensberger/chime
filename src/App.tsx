@@ -14,28 +14,13 @@ import { Button } from "#components/core/button";
 import { SettingsPage } from "./components/SettingsPage";
 import { HistoryPage } from "./components/HistoryPage";
 import { AudioVisualization } from "./components/AudioVisualization";
+import { ShortcutHint } from "./components/ShortcutHint";
 import type { HistorySource } from "./engine/history";
 import type { DemoEngine, DictationEngine, DemoOutcome } from "./engine/types";
-import { loadSettings, saveSettings, shortcutMatches } from "./lib/settings";
-import type { Settings, Shortcut } from "./lib/settings";
+import { loadSettings, saveSettings } from "./lib/settings";
+import type { Settings } from "./lib/settings";
 
 type Page = "dictation" | "history" | "settings";
-
-function Keycap({ shortcut }: { shortcut: Shortcut }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1"
-      role="group"
-      aria-label={
-        shortcut === "Control+Shift+Space" ? "Control Shift Space" : "Control Shift period"
-      }
-    >
-      {["Ctrl", "Shift", shortcut.endsWith("Space") ? "Space" : "."].map((key) => (
-        <kbd key={key}>{key}</kbd>
-      ))}
-    </span>
-  );
-}
 
 function Elapsed({ startedAt }: { startedAt: number }) {
   const [now, setNow] = useState(Date.now);
@@ -94,18 +79,14 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
         (target.isContentEditable || target.closest("input, textarea, select"))
       )
         return;
-      if (shortcutMatches(event, settings.shortcut)) {
-        event.preventDefault();
-        if (state.phase === "recording") engine.finish();
-        else if (!busy) engine.start();
-      } else if (event.key === "Escape" && busy) {
+      if (event.key === "Escape" && busy) {
         event.preventDefault();
         engine.cancel();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [engine, state.phase, settings.shortcut, page, busy]);
+  }, [engine, page, busy]);
 
   function changeSettings(next: Settings) {
     setSettings(next);
@@ -235,19 +216,17 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Keycap shortcut={settings.shortcut} />
-                <span>in this window</span>
-              </div>
+              {!demo && (
+                <div className="text-xs text-muted-foreground">
+                  <ShortcutHint />
+                </div>
+              )}
             </div>
           </section>
 
           {state.lastResult && (
             <section aria-label="Last transcript" className="flex flex-col gap-3 border-t pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <Button variant="ghost" size="sm" onClick={() => setPage("history")}>
-                  History
-                </Button>
+              <div className="flex items-center justify-end gap-3">
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" onClick={() => void copyResult()}>
                     {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}

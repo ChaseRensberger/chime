@@ -1,0 +1,45 @@
+name: Linux release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bun run version:check "$RELEASE_TAG"
+      - run: bun run check
+      - run: bun run test
+      - name: Build and upload Linux packages
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: bunx tauri
+          args: --bundles deb,appimage -- --locked
+          tagName: ${{ github.ref_name }}
+          releaseName: Chime ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generateReleaseNotes: true
+          releaseBody: |
+            Linux x86_64 packages (AVX2-capable CPU required). Wayland clipboard and paste require wl-clipboard and wtype, plus compositor support for virtual keyboards. The Debian package installs these helpers; AppImage users must install them separately.
+
+            Download a Parakeet Unified English Q8_0 GGUF model separately and select it in Settings. The model is not included.
+
+            macOS releases are not included yet.

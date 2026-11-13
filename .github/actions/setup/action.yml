@@ -1,0 +1,28 @@
+name: Set up Chime
+description: Install the toolchain and native build dependencies
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+    - name: Install Rust
+      shell: bash
+      run: rustup show
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri -> target
+        cache-on-failure: true
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libssl-dev \
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+          patchelf libasound2-dev libpulse-dev wl-clipboard wtype libfuse2 xdg-utils
+    - name: Install macOS build dependencies
+      if: runner.os == 'macOS'
+      shell: bash
+      run: command -v cmake || brew install cmake
+    - name: Install frontend dependencies
+      shell: bash
+      run: bun install --frozen-lockfile

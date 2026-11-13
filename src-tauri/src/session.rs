@@ -113,10 +113,16 @@ impl Sessions {
             model_loaded: false,
             shortcut_command: format!(
                 "'{}' --toggle",
-                std::env::current_exe()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .replace('\'', "'\\''")
+                // AppImage mounts are temporary; desktop bindings must launch the image itself.
+                if cfg!(target_os = "linux") {
+                    std::env::var_os("APPIMAGE")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| std::env::current_exe().unwrap_or_default())
+                } else {
+                    std::env::current_exe().unwrap_or_default()
+                }
+                .to_string_lossy()
+                .replace('\'', "'\\''")
             ),
         }));
         let generation = Arc::new(AtomicU64::new(0));

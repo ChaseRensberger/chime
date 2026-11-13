@@ -1,0 +1,4 @@
+[env]
+# Do not compile the speech engine for the build machine's particular CPU.
+# Linux x86_64 uses ggml's non-native AVX2 baseline; macOS has its own floor.
+TRANSCRIBE_CMAKE_ARGS = "-DGGML_NATIVE=OFF"

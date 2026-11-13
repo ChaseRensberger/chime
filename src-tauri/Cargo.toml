@@ -2,6 +2,8 @@
 name = "chime-desktop"
 version = "0.1.0"
 edition = "2021"
+authors = ["Chase Rensberger"]
+description = "Local voice dictation by Rensberger"
 publish = false
 
 [build-dependencies]
