@@ -19,10 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - name: Validate release tag
+      - name: Apply release version from tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: bun run version:check "$RELEASE_TAG"
+        run: |
+          bun run release:prepare "$RELEASE_TAG"
+          bun run version:check "$RELEASE_TAG"
       - run: bun run check
       - run: bun run test
       - name: Build and upload Linux packages

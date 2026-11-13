@@ -21,6 +21,7 @@
     "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml && cargo test --locked --manifest-path crates/chime-engine/Cargo.toml --target-dir src-tauri/target",
     "bundle": "tauri build",
     "version:check": "bun scripts/check-version.ts",
+    "release:prepare": "bun scripts/prepare-release.ts",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build"
   },
