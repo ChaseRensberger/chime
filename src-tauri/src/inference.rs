@@ -25,6 +25,16 @@ pub struct Worker {
 }
 
 impl Worker {
+    pub fn prepare(model: &Path, generation: &AtomicU64, id: u64) -> Result<Self, String> {
+        let worker = Self::spawn(model)?;
+        worker.receive(
+            generation,
+            id,
+            "Model loading timed out. Try a smaller model.",
+        )?;
+        Ok(worker)
+    }
+
     fn spawn(model: &Path) -> Result<Self, String> {
         let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
             .arg("--transcribe-worker")
@@ -68,14 +78,19 @@ impl Worker {
         })
     }
 
-    fn receive(&self, generation: &AtomicU64, id: u64) -> Result<String, String> {
+    fn receive(
+        &self,
+        generation: &AtomicU64,
+        id: u64,
+        timeout_message: &str,
+    ) -> Result<String, String> {
         let start = Instant::now();
         loop {
             if generation.load(Ordering::SeqCst) != id {
                 return Err("Cancelled".into());
             }
             if start.elapsed() >= DEADLINE {
-                return Err("Transcription timed out. Try a shorter recording.".into());
+                return Err(timeout_message.into());
             }
             match self.responses.recv_timeout(Duration::from_millis(50)) {
                 Ok(response) => return response,
@@ -101,7 +116,11 @@ impl Worker {
             })();
             (stdin, result)
         });
-        let result = self.receive(generation, id);
+        let result = self.receive(
+            generation,
+            id,
+            "Transcription timed out. Try a shorter recording.",
+        );
         if result.is_err() {
             let _ = self.child.kill();
         }
@@ -135,9 +154,7 @@ pub fn infer(
             *worker = None;
         }
         if worker.is_none() {
-            let started = Worker::spawn(model)?;
-            started.receive(generation, id)?; // Model-ready handshake; failure drops and reaps it.
-            *worker = Some(started);
+            *worker = Some(Worker::prepare(model, generation, id)?);
         }
         worker.as_mut().unwrap().run(samples, generation, id)
     })();

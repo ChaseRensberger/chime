@@ -3,6 +3,7 @@
 mod history;
 mod inference;
 mod model;
+mod models;
 mod output;
 mod session;
 use tauri::Manager;
@@ -44,6 +45,7 @@ fn main() {
             dispatch(app, &args)
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config = app.path().app_config_dir()?.join("model.json");
             let fallback = std::env::var_os("CHIME_MODEL_PATH")
@@ -65,13 +67,19 @@ fn main() {
             ));
             app.manage(session::Sessions::new(model, config, history.clone()));
             app.manage(history);
+            app.manage(std::sync::Arc::new(models::Models::new(
+                app.path().app_data_dir()?.join("models"),
+            )));
             dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             session::session_snapshot,
             session::session_action,
-            model::choose_model,
+            models::models_snapshot,
+            models::models_start,
+            models::models_cancel,
+            models::models_open_info,
             output::copy_result,
             history::history_list,
             history::history_update,

@@ -144,7 +144,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
           modelLoaded={state.modelLoaded}
           shortcutCommand={state.shortcutCommand}
           busy={busy}
-          onChooseModel={engine.chooseModel}
+          models={engine.models}
           onOutcomeChange={(next) => {
             setOutcome(next);
             if (demo) (engine as DemoEngine).setOutcome(next);
@@ -187,7 +187,11 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
               <div className="flex items-center gap-2">
                 <Button
                   size="lg"
-                  disabled={state.phase === "starting" || state.phase === "processing"}
+                  disabled={
+                    state.phase === "starting" ||
+                    state.phase === "processing" ||
+                    (!demo && state.modelAvailable === false)
+                  }
                   aria-busy={state.phase === "processing"}
                   onClick={() => (state.phase === "recording" ? engine.finish() : engine.start())}
                 >
@@ -220,6 +224,11 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                 <div className="text-xs text-muted-foreground">
                   <ShortcutHint />
                 </div>
+              )}
+              {!demo && state.modelAvailable === false && (
+                <Button variant="outline" onClick={() => setPage("settings")}>
+                  Set up speech model
+                </Button>
               )}
             </div>
           </section>

@@ -63,6 +63,30 @@ pub fn copy(text: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn paste_keys(terminal: bool) -> Vec<String> {
+    // wtype assigns evdev codes from 1 in keysym insertion order. Reserve
+    // codes 1–46 with releases only, so V lands on KEY_V (47) even when a
+    // compositor interprets shortcuts through its own keyboard layout.
+    let mut args = Vec::new();
+    for index in 0..46 {
+        args.extend(["-p".into(), format!("U{:04X}", 0x2460 + index)]);
+    }
+    args.extend(["-M".into(), "ctrl".into()]);
+    if terminal {
+        args.extend(["-M".into(), "shift".into()]);
+    }
+    args.extend(["-k".into(), "v".into()]);
+    if terminal {
+        args.extend(["-m".into(), "shift".into()]);
+    }
+    args.extend(["-m".into(), "ctrl".into()]);
+    // GTK 3's reverse keymap lookup skips the final code. A trailing neutral
+    // release keeps V discoverable as a shortcut rather than literal text.
+    args.extend(["-p".into(), "VoidSymbol".into()]);
+    args
+}
+
 pub fn paste(
     terminal: bool,
     generation: &std::sync::atomic::AtomicU64,
@@ -75,17 +99,9 @@ pub fn paste(
     }
     #[cfg(target_os = "linux")]
     {
-        if terminal {
-            run(
-                "wtype",
-                &[
-                    "-M", "ctrl", "-M", "shift", "-k", "v", "-m", "shift", "-m", "ctrl",
-                ],
-                None,
-            )
-        } else {
-            run("wtype", &["-M", "ctrl", "-k", "v", "-m", "ctrl"], None)
-        }
+        let keys = paste_keys(terminal);
+        let args: Vec<&str> = keys.iter().map(String::as_str).collect();
+        run("wtype", &args, None)
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -107,6 +123,44 @@ pub async fn copy_result(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn paste_keymap_matches_evdev_and_keeps_v_before_the_final_code() {
+        for terminal in [false, true] {
+            let args = super::paste_keys(terminal);
+            let mut keymap = Vec::new();
+            let mut held = Vec::new();
+            let mut presses = Vec::new();
+            for pair in args.chunks_exact(2) {
+                let (operation, key) = (pair[0].as_str(), pair[1].as_str());
+                match operation {
+                    "-p" | "-k" => {
+                        if !keymap.contains(&key) {
+                            keymap.push(key);
+                        }
+                        if operation == "-k" {
+                            presses.push(key);
+                            assert_eq!(
+                                held,
+                                if terminal {
+                                    vec!["ctrl", "shift"]
+                                } else {
+                                    vec!["ctrl"]
+                                }
+                            );
+                        }
+                    }
+                    "-M" => held.push(key),
+                    "-m" => assert_eq!(held.pop(), Some(key)),
+                    _ => panic!("Unexpected wtype operation"),
+                }
+            }
+            assert_eq!(presses, ["v"], "placeholder keys must only be released");
+            assert_eq!(keymap.iter().position(|key| *key == "v"), Some(46));
+            assert_eq!(keymap.last(), Some(&"VoidSymbol"));
+            assert!(held.is_empty(), "all modifiers must be released");
+        }
+    }
+
     #[test]
     fn cancelled_delivery_sends_no_keys() {
         let generation = std::sync::atomic::AtomicU64::new(2);

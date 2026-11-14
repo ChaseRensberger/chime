@@ -2,8 +2,6 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-use tauri::Manager;
-use tauri_plugin_dialog::DialogExt;
 
 pub fn load(config: &Path, fallback: PathBuf) -> PathBuf {
     std::fs::read(config)
@@ -26,24 +24,6 @@ pub fn save(config: &Path, model: &Path) -> Result<(), String> {
     let bytes = serde_json::to_vec(model).map_err(|e| e.to_string())?;
     std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
     std::fs::rename(temporary, config).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn choose_model(app: tauri::AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let selection = app
-            .dialog()
-            .file()
-            .add_filter("GGUF speech model", &["gguf"])
-            .blocking_pick_file();
-        if let Some(file) = selection {
-            let path = file.into_path().map_err(|e| e.to_string())?;
-            app.state::<crate::session::Sessions>().select_model(path)?;
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]

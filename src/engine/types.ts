@@ -1,4 +1,5 @@
 /** UI-facing session contract. Native audio and desktop output belong in adapters. */
+import type { ModelService } from "./models";
 export type Phase = "idle" | "starting" | "recording" | "processing" | "complete" | "error";
 export type DemoOutcome = "success" | "silence" | "error";
 
@@ -15,6 +16,7 @@ export interface EngineSnapshot {
   level?: number;
   modelPath?: string;
   modelLoaded?: boolean;
+  modelAvailable?: boolean;
   shortcutCommand?: string;
 }
 
@@ -26,7 +28,7 @@ export interface DictationEngine {
   finish(): void;
   cancel(): void;
   clearResult(): void;
-  chooseModel?(): Promise<void>;
+  models?: ModelService;
   copyResult?(): Promise<void>;
   dispose(): void;
 }

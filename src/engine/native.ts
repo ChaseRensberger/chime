@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { DictationEngine, EngineSnapshot } from "./types";
+import { nativeModels } from "./models";
 
 export function createNativeEngine(): DictationEngine {
   let snapshot: EngineSnapshot = {
@@ -53,7 +54,7 @@ export function createNativeEngine(): DictationEngine {
     finish: () => void command("finish"),
     cancel: () => void command("cancel"),
     clearResult: () => void command("clear"),
-    chooseModel: () => invoke("choose_model"),
+    models: nativeModels,
     copyResult: () => invoke("copy_result"),
     dispose() {
       disposed = true;

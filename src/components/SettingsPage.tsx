@@ -4,7 +4,9 @@ import { NativeSelect } from "#components/core/native-select";
 import type { Appearance, Settings } from "../lib/settings";
 import { ShortcutHint } from "./ShortcutHint";
 import type { DemoOutcome } from "../engine/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { ModelSettings } from "./ModelSettings";
+import type { ModelService } from "../engine/models";
 
 export function SettingsPage({
   settings,
@@ -16,7 +18,7 @@ export function SettingsPage({
   modelLoaded,
   shortcutCommand,
   busy,
-  onChooseModel,
+  models,
 }: {
   settings: Settings;
   onChange(settings: Settings): void;
@@ -27,25 +29,12 @@ export function SettingsPage({
   modelLoaded?: boolean;
   shortcutCommand?: string;
   busy: boolean;
-  onChooseModel?: () => Promise<void>;
+  models?: ModelService;
 }) {
-  const [choosing, setChoosing] = useState(false);
-  const [modelError, setModelError] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
   }, []);
-  async function chooseModel() {
-    setChoosing(true);
-    setModelError("");
-    try {
-      await onChooseModel?.();
-    } catch (error) {
-      setModelError(String(error));
-    } finally {
-      setChoosing(false);
-    }
-  }
   return (
     <main
       className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8 sm:px-8"
@@ -97,40 +86,30 @@ export function SettingsPage({
           <h2 id="model-title" className="section-label">
             Speech model
           </h2>
-          <div className="flex flex-col gap-1">
-            <p className="break-all">
-              {demo
-                ? "Parakeet Unified English"
-                : modelPath?.split(/[\\/]/).pop() || "No model selected"}
-            </p>
+          {models ? (
+            <ModelSettings source={models} busy={busy} />
+          ) : (
+            <div className="flex flex-col gap-1">
+              <p className="break-all">
+                {demo
+                  ? "Parakeet Unified English"
+                  : modelPath?.split(/[\\/]/).pop() || "No model selected"}
+              </p>
+              <p className="supporting">
+                {demo
+                  ? "0.6B · Q8_0 · 731 MB"
+                  : modelLoaded
+                    ? "Loaded · CPU · kept warm"
+                    : "Loads on first dictation · CPU"}
+              </p>
+            </div>
+          )}
+          {!models && (
             <p className="supporting">
               {demo
-                ? "0.6B · Q8_0 · 731 MB"
-                : modelLoaded
-                  ? "Loaded · CPU · kept warm"
-                  : "Loads on first dictation · CPU"}
+                ? "Not loaded in the browser preview."
+                : "Choose a downloaded GGUF speech model. Chime remembers the file location."}
             </p>
-          </div>
-          <p className="supporting">
-            {demo
-              ? "Not loaded in the browser preview."
-              : "Choose a downloaded GGUF speech model. Chime remembers the file location."}
-          </p>
-          {!demo && (
-            <>
-              <Button
-                variant="outline"
-                disabled={busy || choosing}
-                onClick={() => void chooseModel()}
-              >
-                {choosing ? "Choosing…" : "Choose model…"}
-              </Button>
-              {modelError && (
-                <p role="alert" className="supporting text-destructive">
-                  {modelError}
-                </p>
-              )}
-            </>
           )}
         </section>
         <section className="settings-section" aria-labelledby="appearance-title">

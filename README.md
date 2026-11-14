@@ -18,7 +18,9 @@ The first packaged release has not been published yet. Linux uses Wayland; macOS
 
 ## Getting started
 
-Download the [Parakeet Unified English Q8_0 speech model](https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf) and select its `.gguf` file in **Settings → Choose model**. Once the model is on your device, transcription works offline.
+In **Settings → Speech model**, download the recommended Parakeet Unified English model (731 MB). You can cancel and resume the download. Once the model is ready, transcription works offline.
+
+To use a compatible local GGUF speech model, choose **Import model…**. Chime checks and copies the file into its model folder without changing your original.
 
 In your desktop's keyboard settings, assign **Alt+Space** to the command shown in Chime's Settings. Press it once to record and again to transcribe.
 

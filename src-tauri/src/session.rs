@@ -29,6 +29,7 @@ pub struct Snapshot {
     level: f32,
     model_path: String,
     model_loaded: bool,
+    model_available: bool,
     shortcut_command: String,
 }
 
@@ -52,7 +53,11 @@ enum Action {
     Failed(u64, String),
     Complete(u64, u64, Result<String, String>),
     Delivered(u64, Result<(), String>),
-    SelectModel(PathBuf, mpsc::SyncSender<Result<(), String>>),
+    SelectModel(
+        PathBuf,
+        crate::inference::Worker,
+        mpsc::SyncSender<Result<(), String>>,
+    ),
     Shutdown,
 }
 
@@ -111,6 +116,7 @@ impl Sessions {
             level: 0.0,
             model_path: model.to_string_lossy().into_owned(),
             model_loaded: false,
+            model_available: model.is_file(),
             shortcut_command: format!(
                 "'{}' --toggle",
                 // AppImage mounts are temporary; desktop bindings must launch the image itself.
@@ -281,7 +287,7 @@ impl Sessions {
                         }
                         Action::Clear => state.lock().unwrap().last_result = None,
                         Action::Toggle(_) => unreachable!(),
-                        Action::SelectModel(path, reply) => {
+                        Action::SelectModel(path, candidate, reply) => {
                             let busy = matches!(
                                 state.lock().unwrap().phase.as_str(),
                                 "starting" | "recording" | "processing"
@@ -294,21 +300,19 @@ impl Sessions {
                             if result.is_ok() {
                                 generation.fetch_add(1, Ordering::SeqCst);
                                 // A cancelled inference may still be unwinding. Do not block the actor.
-                                let old = std::mem::replace(&mut warm, Arc::new(Mutex::new(None)));
+                                let old = std::mem::replace(
+                                    &mut warm,
+                                    Arc::new(Mutex::new(Some(candidate))),
+                                );
                                 workers.push(thread::spawn(move || {
                                     *old.lock().unwrap() = None;
                                 }));
                                 model = path;
                                 let mut state = state.lock().unwrap();
                                 state.model_path = model.to_string_lossy().into_owned();
-                                state.model_loaded = false;
-                                state.phase(
-                                    "idle",
-                                    Some(
-                                        "Model selected. It will load on your next dictation."
-                                            .into(),
-                                    ),
-                                );
+                                state.model_loaded = true;
+                                state.model_available = true;
+                                state.phase("idle", Some("Model ready.".into()));
                             }
                             let _ = reply.send(result);
                         }
@@ -412,10 +416,18 @@ impl Sessions {
             .as_ref()
             .map(|t| t.text.clone())
     }
-    pub fn select_model(&self, path: PathBuf) -> Result<(), String> {
+    pub fn model_path(&self) -> PathBuf {
+        PathBuf::from(&self.state.lock().unwrap().model_path)
+    }
+
+    pub fn select_model(
+        &self,
+        path: PathBuf,
+        worker: crate::inference::Worker,
+    ) -> Result<(), String> {
         let (tx, rx) = mpsc::sync_channel(1);
         self.tx
-            .send(Action::SelectModel(path, tx))
+            .send(Action::SelectModel(path, worker, tx))
             .map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
     }
@@ -431,7 +443,9 @@ impl Sessions {
 
 #[tauri::command]
 pub fn session_snapshot(sessions: tauri::State<'_, Sessions>) -> Snapshot {
-    sessions.state.lock().unwrap().clone()
+    let mut state = sessions.state.lock().unwrap().clone();
+    state.model_available = PathBuf::from(&state.model_path).is_file();
+    state
 }
 
 #[tauri::command]
