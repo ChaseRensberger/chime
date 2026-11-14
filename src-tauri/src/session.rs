@@ -23,6 +23,8 @@ pub struct Transcript {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     phase: String,
+    #[serde(skip)]
+    paste_failed: bool,
     started_at: Option<u64>,
     last_result: Option<Transcript>,
     message: Option<String>,
@@ -36,12 +38,21 @@ pub struct Snapshot {
 impl Snapshot {
     fn phase(&mut self, phase: &str, message: Option<String>) {
         self.phase = phase.into();
+        self.paste_failed = false;
         self.message = message;
         self.level = 0.0;
         if phase != "recording" {
             self.started_at = None;
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrayState {
+    pub phase: String,
+    pub can_copy: bool,
+    pub model_available: bool,
+    pub paste_failed: bool,
 }
 
 enum Action {
@@ -106,6 +117,7 @@ impl Sessions {
     pub fn new(mut model: PathBuf, config: PathBuf, history: Arc<crate::history::History>) -> Self {
         let state = Arc::new(Mutex::new(Snapshot {
             phase: "idle".into(),
+            paste_failed: false,
             started_at: None,
             last_result: None,
             message: if model.is_file() {
@@ -367,11 +379,13 @@ impl Sessions {
                         }
                         Action::Delivered(id, result) => {
                             if id == generation.load(Ordering::SeqCst) {
+                                let paste_failed = result.is_err();
                                 let message = match result {
                                     Ok(()) => "Paste shortcut sent to the focused app.".into(),
                                     Err(error) => format!("Automatic paste unavailable: {error}. Use Copy, then paste manually."),
                                 };
                                 let mut state = state.lock().unwrap();
+                                state.paste_failed = paste_failed;
                                 state.message = Some(match state.message.take() {
                                     Some(existing) => format!("{existing} {message}"),
                                     None => message,
@@ -401,6 +415,25 @@ impl Sessions {
 
     pub fn toggle(&self, terminal: bool) {
         let _ = self.tx.send(Action::Toggle(terminal));
+    }
+    pub fn tray_state(&self) -> TrayState {
+        let (mut tray, model_path) = {
+            let state = self.state.lock().unwrap();
+            (
+                TrayState {
+                    phase: state.phase.clone(),
+                    can_copy: state
+                        .last_result
+                        .as_ref()
+                        .is_some_and(|result| !result.text.trim().is_empty()),
+                    model_available: false,
+                    paste_failed: state.paste_failed,
+                },
+                state.model_path.clone(),
+            )
+        };
+        tray.model_available = std::path::Path::new(&model_path).is_file();
+        tray
     }
     pub fn model_available(&self) -> bool {
         std::path::Path::new(&self.state.lock().unwrap().model_path).is_file()
@@ -463,6 +496,87 @@ pub fn session_action(action: String, sessions: tauri::State<'_, Sessions>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn drain(sessions: &Sessions) {
+        sessions.tx.send(Action::Shutdown).unwrap();
+        sessions
+            .actor
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn tray_reports_missing_model_on_first_launch() {
+        let sessions = Sessions::new(
+            PathBuf::new(),
+            PathBuf::new(),
+            Arc::new(crate::history::History::memory()),
+        );
+        let tray = sessions.tray_state();
+        assert!(!tray.can_copy);
+        assert_eq!(
+            crate::tray::presentation(&tray),
+            ("Set up speech model", false)
+        );
+        sessions.shutdown();
+    }
+
+    #[test]
+    fn tray_reports_delivery_failure_after_successful_transcription() {
+        let sessions = Sessions::new(
+            PathBuf::new(),
+            PathBuf::new(),
+            Arc::new(crate::history::History::memory()),
+        );
+        sessions
+            .tx
+            .send(Action::Complete(0, 1000, Ok("Keep this transcript".into())))
+            .unwrap();
+        sessions
+            .tx
+            .send(Action::Delivered(0, Err("wtype failed".into())))
+            .unwrap();
+        drain(&sessions);
+        let tray = sessions.tray_state();
+        assert_eq!(tray.phase, "complete");
+        assert!(tray.can_copy);
+        assert!(tray.paste_failed);
+        assert_eq!(
+            crate::tray::presentation(&tray),
+            ("Paste failed — copy transcript and paste manually", false)
+        );
+    }
+
+    #[test]
+    fn tray_clears_delivery_failure_and_ignores_stale_delivery() {
+        let sessions = Sessions::new(
+            PathBuf::new(),
+            PathBuf::new(),
+            Arc::new(crate::history::History::memory()),
+        );
+        sessions
+            .tx
+            .send(Action::Complete(0, 1000, Ok("Keep this transcript".into())))
+            .unwrap();
+        sessions
+            .tx
+            .send(Action::Delivered(0, Err("wtype failed".into())))
+            .unwrap();
+        sessions.tx.send(Action::Cancel).unwrap();
+        sessions
+            .tx
+            .send(Action::Delivered(0, Err("Late failure".into())))
+            .unwrap();
+        drain(&sessions);
+        let tray = sessions.tray_state();
+        assert!(!tray.paste_failed);
+        assert!(tray.can_copy);
+        assert_eq!(tray.phase, "idle");
+    }
 
     #[test]
     #[ignore = "opens the default microphone briefly; run explicitly on the target desktop"]

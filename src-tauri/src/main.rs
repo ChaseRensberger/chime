@@ -6,6 +6,7 @@ mod model;
 mod models;
 mod output;
 mod session;
+mod tray;
 use tauri::Manager;
 
 fn show_window(app: &tauri::AppHandle) {
@@ -53,21 +54,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let show =
-                tauri::menu::MenuItem::with_id(app, "show", "Show Chime", true, None::<&str>)?;
-            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = tauri::menu::Menu::with_items(app, &[&show, &quit])?;
-            let icon = app.default_window_icon().ok_or("Missing Chime icon")?;
-            tauri::tray::TrayIconBuilder::with_id("chime")
-                .icon(icon.clone())
-                .tooltip("Chime")
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => show_window(app),
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
             let config = app.path().app_config_dir()?.join("model.json");
             let fallback = std::env::var_os("CHIME_MODEL_PATH")
                 .map(std::path::PathBuf::from)
@@ -91,6 +77,7 @@ fn main() {
             app.manage(std::sync::Arc::new(models::Models::new(
                 app.path().app_data_dir()?.join("models"),
             )));
+            tray::setup(app.handle())?;
             dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
@@ -121,6 +108,9 @@ fn main() {
                 show_window(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(task) = app.try_state::<tray::TrayTask>() {
+                    task.stop();
+                }
                 app.state::<session::Sessions>().shutdown();
             }
         });
