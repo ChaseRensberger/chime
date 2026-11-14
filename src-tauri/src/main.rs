@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod feedback;
 mod history;
 mod inference;
 mod model;
@@ -73,6 +74,11 @@ fn main() {
                 app.path().app_data_dir()?.join("history.json"),
             ));
             app.manage(session::Sessions::new(model, config, history.clone()));
+            let feedback =
+                feedback::Feedback::new(app.path().app_config_dir()?.join("feedback.json"));
+            app.state::<session::Sessions>()
+                .set_feedback(feedback.sender.clone());
+            app.manage(feedback);
             app.manage(history);
             app.manage(std::sync::Arc::new(models::Models::new(
                 app.path().app_data_dir()?.join("models"),
@@ -90,6 +96,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             session::session_snapshot,
+            feedback::feedback_preferences,
+            feedback::feedback_save,
+            feedback::feedback_preview,
             session::session_action,
             models::models_snapshot,
             models::models_start,

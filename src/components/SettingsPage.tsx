@@ -7,6 +7,7 @@ import type { DemoOutcome } from "../engine/types";
 import { useEffect, useRef } from "react";
 import { ModelSettings } from "./ModelSettings";
 import type { ModelService } from "../engine/models";
+import { FeedbackSettings } from "./FeedbackSettings";
 
 export function SettingsPage({
   settings,
@@ -69,19 +70,20 @@ export function SettingsPage({
               <p>Shortcut</p>
               <ShortcutHint />
               <p className="supporting">
-                In COSMIC Settings → Keyboard → Custom Shortcuts, assign Alt+Space to this command.
-                Manage the binding there.
+                Assign this command to a shortcut in your desktop’s keyboard settings. Press once to
+                start recording and again to finish.
               </p>
               <code className="select-text break-all rounded-sm border p-2 text-xs">
                 {shortcutCommand}
               </code>
               <p className="supporting">
-                Toggles recording without focusing Chime, then pastes into the focused app. Use
-                --toggle-terminal for Ctrl+Shift+V. While processing, the shortcut cancels.
+                Records without switching away from your app. Automatic paste depends on your
+                desktop’s input support. Pressing the shortcut during transcription cancels it.
               </p>
             </div>
           )}
         </section>
+        {!demo && <FeedbackSettings />}
         <section className="settings-section" aria-labelledby="model-title">
           <h2 id="model-title" className="section-label">
             Speech model

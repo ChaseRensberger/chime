@@ -53,15 +53,14 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         ],
     )?;
     let copy_action = copy.clone();
-    // macOS template images follow the menu bar's appearance automatically.
-    // Linux uses a light mark with a dark outline for either panel background.
+    // Keep the brand orange on every platform, including the macOS menu bar.
     #[cfg(target_os = "macos")]
     let icon = tauri::include_image!("icons/tray.png");
     #[cfg(not(target_os = "macos"))]
     let icon = tauri::include_image!("icons/tray-linux.png");
     let tray = TrayIconBuilder::with_id("chime")
         .icon(icon)
-        .icon_as_template(cfg!(target_os = "macos"))
+        .icon_as_template(false)
         .tooltip(format!("Chime — {label}"))
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id.as_ref() {

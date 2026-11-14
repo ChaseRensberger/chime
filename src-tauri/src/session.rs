@@ -22,6 +22,8 @@ pub struct Transcript {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    #[serde(skip)]
+    feedback: Option<crate::feedback::Sender>,
     phase: String,
     #[serde(skip)]
     paste_failed: bool,
@@ -37,6 +39,9 @@ pub struct Snapshot {
 
 impl Snapshot {
     fn phase(&mut self, phase: &str, message: Option<String>) {
+        if let Some(sender) = &self.feedback {
+            sender.transition(&self.phase, phase);
+        }
         self.phase = phase.into();
         self.paste_failed = false;
         self.message = message;
@@ -116,6 +121,7 @@ impl Sink for Capture {
 impl Sessions {
     pub fn new(mut model: PathBuf, config: PathBuf, history: Arc<crate::history::History>) -> Self {
         let state = Arc::new(Mutex::new(Snapshot {
+            feedback: None,
             phase: "idle".into(),
             paste_failed: false,
             started_at: None,
@@ -395,6 +401,9 @@ impl Sessions {
                         Action::Shutdown => {
                             generation.fetch_add(1, Ordering::SeqCst);
                             drop(recorder.take());
+                            if let Some(sender) = &state.lock().unwrap().feedback {
+                                sender.invalidate();
+                            }
                             for worker in workers {
                                 let _ = worker.join();
                             }
@@ -415,6 +424,9 @@ impl Sessions {
 
     pub fn toggle(&self, terminal: bool) {
         let _ = self.tx.send(Action::Toggle(terminal));
+    }
+    pub fn set_feedback(&self, sender: crate::feedback::Sender) {
+        self.state.lock().unwrap().feedback = Some(sender);
     }
     pub fn tray_state(&self) -> TrayState {
         let (mut tray, model_path) = {
