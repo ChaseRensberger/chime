@@ -8,6 +8,14 @@ mod output;
 mod session;
 use tauri::Manager;
 
+fn show_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn dispatch(app: &tauri::AppHandle, args: &[String]) {
     let Some(sessions) = app.try_state::<session::Sessions>() else {
         return;
@@ -22,13 +30,11 @@ fn dispatch(app: &tauri::AppHandle, args: &[String]) {
     {
         if sessions.model_available() {
             sessions.toggle(args.iter().any(|a| a == "--toggle-terminal"));
-        } else if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
+        } else {
+            show_window(app);
         }
-    } else if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
+    } else {
+        show_window(app);
     }
 }
 
@@ -47,6 +53,21 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            let show =
+                tauri::menu::MenuItem::with_id(app, "show", "Show Chime", true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&show, &quit])?;
+            let icon = app.default_window_icon().ok_or("Missing Chime icon")?;
+            tauri::tray::TrayIconBuilder::with_id("chime")
+                .icon(icon.clone())
+                .tooltip("Chime")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
             let config = app.path().app_config_dir()?.join("model.json");
             let fallback = std::env::var_os("CHIME_MODEL_PATH")
                 .map(std::path::PathBuf::from)
@@ -73,6 +94,13 @@ fn main() {
             dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && window.hide().is_ok() {
+                    api.prevent_close();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             session::session_snapshot,
             session::session_action,
@@ -88,6 +116,10 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("could not run Chime")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                show_window(app);
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<session::Sessions>().shutdown();
             }

@@ -51,14 +51,14 @@ export function InstallPanel({ repository }: { repository: string }) {
           onChange={setPlatform}
         />
       </div>
-      <div className="flex flex-col gap-4 py-4">
-        <div className="grid items-center gap-2 sm:grid-cols-[8rem_1fr]">
+      <div className="flex flex-col gap-2 py-3">
+        <div className="grid grid-cols-[7rem_1fr] items-center gap-2 sm:grid-cols-[8rem_1fr]">
           <span className="text-xs text-muted-foreground">Architecture</span>
           <span className="flex min-h-11 items-center px-3 text-xs">
             {platform === "linux" ? "x64" : "Apple silicon"}
           </span>
         </div>
-        <div className="grid items-center gap-2 sm:grid-cols-[8rem_1fr]">
+        <div className="grid grid-cols-[7rem_1fr] items-center gap-2 sm:grid-cols-[8rem_1fr]">
           <span className="text-xs text-muted-foreground">Package</span>
           {platform === "macos" ? (
             <span className="flex min-h-11 items-center px-3 text-xs">DMG</span>

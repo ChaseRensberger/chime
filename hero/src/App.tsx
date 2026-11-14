@@ -17,7 +17,7 @@ export function App() {
       >
         Skip to content
       </a>
-      <header className="flex items-center justify-between gap-4 border-b py-6">
+      <header className="flex items-center justify-between gap-4 border-b py-2 sm:py-3">
         <a
           href="/"
           aria-label="Chime home"
@@ -32,29 +32,30 @@ export function App() {
         </nav>
       </header>
 
-      <main
-        id="main"
-        className="flex flex-1 flex-col items-center justify-center gap-12 py-12 sm:py-16"
-      >
+      <main id="main" className="flex flex-1 flex-col items-center justify-center py-4">
         <section
           aria-labelledby="hero-title"
-          className="flex w-full max-w-xl flex-col items-center gap-8 text-center"
+          className="flex w-full max-w-xl flex-col items-center gap-4 text-center"
         >
           <div
             aria-hidden="true"
-            className="flex h-40 w-full max-w-xl items-center justify-center gap-0.5 px-4 text-link sm:h-48 sm:gap-1"
+            className="flex h-[clamp(3rem,10dvh,6rem)] w-full max-w-xl items-center justify-center gap-0.5 px-4 text-link sm:h-[clamp(3rem,16dvh,10rem)] sm:gap-1"
           >
             {bars.map((height, i) => (
-              <span key={i} className="max-w-1 min-w-0 flex-1 bg-current" style={{ height }} />
+              <span
+                key={i}
+                className="max-w-1 min-w-0 flex-1 bg-current"
+                style={{ height: `${(height / 128) * 100}%` }}
+              />
             ))}
           </div>
-          <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-3">
             <p className="text-xs tracking-widest text-muted-foreground uppercase">
               Local voice dictation
             </p>
             <h1
               id="hero-title"
-              className="text-3xl leading-9 font-semibold tracking-tight sm:text-4xl sm:leading-10"
+              className="text-2xl leading-8 font-semibold tracking-tight sm:text-4xl sm:leading-10"
             >
               A little less typing.
             </h1>
@@ -67,7 +68,7 @@ export function App() {
         </section>
       </main>
 
-      <footer className="flex items-center justify-center border-t py-6 text-xs text-muted-foreground">
+      <footer className="flex items-center justify-center border-t py-2 text-xs text-muted-foreground sm:py-3">
         <a
           href="https://rensberger.xyz"
           className="inline-flex min-h-11 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline"

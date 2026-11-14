@@ -10,7 +10,7 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 chime-engine = { path = "../crates/chime-engine" }
 handy-recorder = "0.1.1"
 serde = { version = "1", features = ["derive"] }
