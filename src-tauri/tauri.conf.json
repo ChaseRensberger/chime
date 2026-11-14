@@ -33,7 +33,7 @@
     "longDescription": "Transcribe speech locally with microphone capture, clipboard output, and searchable transcript history.",
     "linux": {
       "deb": {
-        "depends": ["libasound2", "libpulse0", "wl-clipboard", "wtype"]
+        "depends": ["libasound2", "libpulse0", "wl-clipboard", "wtype", "libgtk-layer-shell0"]
       }
     }
   }

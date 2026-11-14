@@ -27,13 +27,15 @@ jobs:
           bun run version:check "$RELEASE_TAG"
       - run: bun run check
       - run: bun run test
+      - name: Include the recording overlay runtime
+        run: bun scripts/prepare-linux-bundle.ts
       - name: Build and upload Linux packages
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bunx tauri
-          args: --bundles deb,appimage -- --locked
+          args: --config src-tauri/target/overlay-bundle.json --bundles deb,appimage -- --locked
           tagName: ${{ github.ref_name }}
           releaseName: Chime ${{ github.ref_name }}
           releaseDraft: true

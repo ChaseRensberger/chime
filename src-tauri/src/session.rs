@@ -26,7 +26,11 @@ pub struct Snapshot {
     feedback: Option<crate::feedback::Sender>,
     phase: String,
     #[serde(skip)]
+    revision: u64,
+    #[serde(skip)]
     paste_failed: bool,
+    #[serde(skip)]
+    delivery_pending: bool,
     started_at: Option<u64>,
     last_result: Option<Transcript>,
     message: Option<String>,
@@ -43,7 +47,9 @@ impl Snapshot {
             sender.transition(&self.phase, phase);
         }
         self.phase = phase.into();
+        self.revision = self.revision.wrapping_add(1);
         self.paste_failed = false;
+        self.delivery_pending = false;
         self.message = message;
         self.level = 0.0;
         if phase != "recording" {
@@ -123,7 +129,9 @@ impl Sessions {
         let state = Arc::new(Mutex::new(Snapshot {
             feedback: None,
             phase: "idle".into(),
+            revision: 0,
             paste_failed: false,
+            delivery_pending: false,
             started_at: None,
             last_result: None,
             message: if model.is_file() {
@@ -365,6 +373,7 @@ impl Sessions {
                                         state.message = Some(format!("Transcript ready, but history could not be saved: {error}"));
                                     }
                                     if let Some(terminal) = delivery {
+                                        state.delivery_pending = true;
                                         let tx = tx.clone();
                                         let generation = generation.clone();
                                         workers.push(thread::spawn(move || {
@@ -392,6 +401,7 @@ impl Sessions {
                                 };
                                 let mut state = state.lock().unwrap();
                                 state.paste_failed = paste_failed;
+                                state.delivery_pending = false;
                                 state.message = Some(match state.message.take() {
                                     Some(existing) => format!("{existing} {message}"),
                                     None => message,
@@ -424,6 +434,17 @@ impl Sessions {
 
     pub fn toggle(&self, terminal: bool) {
         let _ = self.tx.send(Action::Toggle(terminal));
+    }
+    pub fn overlay_input(&self) -> crate::overlay::Input {
+        let state = self.state.lock().unwrap();
+        crate::overlay::Input {
+            phase: state.phase.clone(),
+            revision: state.revision,
+            level: state.level,
+            paste_failed: state.paste_failed,
+            delivery_pending: state.delivery_pending,
+            message: state.message.clone(),
+        }
     }
     pub fn set_feedback(&self, sender: crate::feedback::Sender) {
         self.state.lock().unwrap().feedback = Some(sender);

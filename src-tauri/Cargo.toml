@@ -22,3 +22,27 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 sha2 = "0.10"
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 rodio = { version = "0.23", default-features = false, features = ["playback"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+libloading = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSPanel",
+  "NSWindow",
+  "NSResponder",
+  "NSView",
+  "NSBox",
+  "NSGraphics",
+  "NSColor",
+  "NSTextField",
+  "NSControl",
+  "NSFont",
+  "NSScreen",
+  "NSEvent",
+] }
+objc2-foundation = { version = "0.3", features = ["NSTimer", "NSRunLoop"] }
+block2 = "0.6"

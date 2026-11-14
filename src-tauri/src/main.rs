@@ -6,6 +6,7 @@ mod inference;
 mod model;
 mod models;
 mod output;
+mod overlay;
 mod session;
 mod tray;
 use tauri::Manager;
@@ -84,6 +85,7 @@ fn main() {
                 app.path().app_data_dir()?.join("models"),
             )));
             tray::setup(app.handle())?;
+            overlay::setup(app.handle())?;
             dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
@@ -99,6 +101,9 @@ fn main() {
             feedback::feedback_preferences,
             feedback::feedback_save,
             feedback::feedback_preview,
+            overlay::overlay_status,
+            overlay::overlay_save,
+            overlay::overlay_preview,
             session::session_action,
             models::models_snapshot,
             models::models_start,

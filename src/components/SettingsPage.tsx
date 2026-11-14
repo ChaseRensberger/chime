@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { ModelSettings } from "./ModelSettings";
 import type { ModelService } from "../engine/models";
 import { FeedbackSettings } from "./FeedbackSettings";
+import { OverlaySettings } from "./OverlaySettings";
 
 export function SettingsPage({
   settings,
@@ -84,6 +85,7 @@ export function SettingsPage({
           )}
         </section>
         {!demo && <FeedbackSettings />}
+        {!demo && <OverlaySettings />}
         <section className="settings-section" aria-labelledby="model-title">
           <h2 id="model-title" className="section-label">
             Speech model

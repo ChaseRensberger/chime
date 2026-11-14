@@ -19,7 +19,7 @@
     "format:check": "oxfmt --check . && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo fmt --manifest-path crates/chime-engine/Cargo.toml --check",
     "test": "bun test && bun run test:rust",
     "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml && cargo test --locked --manifest-path crates/chime-engine/Cargo.toml --target-dir src-tauri/target",
-    "bundle": "tauri build",
+    "bundle": "bun scripts/prepare-linux-bundle.ts && tauri build --config src-tauri/target/overlay-bundle.json",
     "version:check": "bun scripts/check-version.ts",
     "release:prepare": "bun scripts/prepare-release.ts",
     "desktop:dev": "tauri dev",

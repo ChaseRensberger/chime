@@ -18,7 +18,8 @@ runs:
         sudo apt-get update
         sudo apt-get install -y build-essential cmake pkg-config libssl-dev \
           libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
-          patchelf libasound2-dev libpulse-dev wl-clipboard wtype libfuse2 xdg-utils
+          patchelf libasound2-dev libpulse-dev wl-clipboard wtype libfuse2 xdg-utils \
+          libgtk-layer-shell0
     - name: Install macOS build dependencies
       if: runner.os == 'macOS'
       shell: bash
