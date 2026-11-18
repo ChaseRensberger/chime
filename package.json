@@ -8,6 +8,7 @@
     "#lib/*": "./src/lib/*.ts"
   },
   "scripts": {
+    "icons": "bun scripts/generate-icons.ts",
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
     "preview": "vite --host 127.0.0.1",

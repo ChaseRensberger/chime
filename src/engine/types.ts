@@ -15,6 +15,8 @@ export interface EngineSnapshot {
   message: string | null;
   level?: number;
   modelPath?: string;
+  modelName?: string;
+  pasteFailed?: boolean;
   modelLoaded?: boolean;
   modelAvailable?: boolean;
   shortcutCommand?: string;

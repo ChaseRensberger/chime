@@ -7,9 +7,11 @@ mod model;
 mod models;
 mod output;
 mod overlay;
+mod permissions;
 mod session;
 mod shortcuts;
 mod tray;
+mod updates;
 use tauri::Manager;
 
 fn show_window(app: &tauri::AppHandle) {
@@ -54,6 +56,7 @@ fn main() {
         return;
     }
     tauri::Builder::default()
+        .manage(updates::Updates::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             dispatch(app, &args)
         }))
@@ -105,8 +108,14 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updates::update_check,
+            updates::update_download,
+            permissions::permissions_status,
+            permissions::permissions_action,
             session::session_snapshot,
             shortcuts::shortcut_configure,
+            shortcuts::shortcut_record,
+            shortcuts::shortcut_bind,
             shortcuts::shortcut_mode,
             feedback::feedback_preferences,
             feedback::feedback_save,

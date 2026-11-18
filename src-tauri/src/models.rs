@@ -50,6 +50,24 @@ fn artifact(id: &str) -> Option<&'static Artifact> {
     CATALOG.iter().find(|model| model.id == id)
 }
 
+pub fn display_name(path: &Path) -> String {
+    let file = path.file_name().unwrap_or_default().to_string_lossy();
+    if let Some(model) = CATALOG.iter().find(|model| model.file == file) {
+        return model.name.into();
+    }
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    if path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|p| p == "imports")
+    {
+        if let Some((name, _)) = stem.rsplit_once('-') {
+            return name.into();
+        }
+    }
+    stem.into_owned()
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
@@ -151,12 +169,7 @@ impl Models {
                 let path = item.map_err(|e| e.to_string())?.path();
                 if path.extension().is_some_and(|ext| ext == "gguf") && path.is_file() {
                     let filename = path.file_name().unwrap().to_string_lossy().into_owned();
-                    let name = filename
-                        .trim_end_matches(".gguf")
-                        .rsplit_once('-')
-                        .map(|(name, _)| name)
-                        .unwrap_or(&filename)
-                        .to_string();
+                    let name = display_name(&path);
                     entries.push(Entry {
                         id: format!("import:{filename}"),
                         name,

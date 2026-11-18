@@ -76,6 +76,9 @@ jobs:
           hdiutil attach "${dmg[0]}" -readonly -nobrowse -mountpoint "$mount"
           trap 'hdiutil detach "$mount"' EXIT
           contents="$mount/Chime.app/Contents"
+          icon=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Info.plist")
+          cmp src-tauri/icons/icon.icns "$contents/Resources/$icon"
+          cmp src-tauri/icons/icon.icns "$mount/.VolumeIcon.icns"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$contents/Info.plist")" = "$MACOSX_DEPLOYMENT_TARGET"
           binary="$contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$contents/Info.plist")"
           lipo "$binary" -verify_arch arm64

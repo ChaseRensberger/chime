@@ -598,6 +598,7 @@ version = "0.1.0"
 dependencies = [
  "ashpd",
  "block2",
+ "cc",
  "chime-engine",
  "futures-util",
  "gtk",
@@ -609,6 +610,7 @@ dependencies = [
  "objc2-foundation",
  "reqwest",
  "rodio",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

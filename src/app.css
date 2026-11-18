@@ -22,7 +22,15 @@
 
 @layer components {
   .app-shell {
-    @apply mx-auto flex min-h-dvh w-full max-w-5xl flex-col;
+    @apply mx-auto flex h-dvh w-full max-w-5xl flex-col overflow-hidden;
+  }
+
+  .app-shell > header {
+    @apply shrink-0;
+  }
+
+  .app-shell > main {
+    @apply min-h-0 overflow-y-auto overscroll-contain;
   }
 
   .section-label {

@@ -10,9 +10,12 @@ import { ModelSettings } from "./ModelSettings";
 import type { ModelService } from "../engine/models";
 import { FeedbackSettings } from "./FeedbackSettings";
 import { OverlaySettings } from "./OverlaySettings";
+import { Permissions } from "./Permissions";
+import { ShortcutRecorder } from "./ShortcutRecorder";
 
 export function SettingsPage({
   settings,
+  section,
   onChange,
   outcome,
   onOutcomeChange,
@@ -25,6 +28,7 @@ export function SettingsPage({
   models,
 }: {
   settings: Settings;
+  section: "model" | "permissions" | null;
   onChange(settings: Settings): void;
   outcome: DemoOutcome;
   onOutcomeChange(outcome: DemoOutcome): void;
@@ -47,8 +51,9 @@ export function SettingsPage({
     }
   }
   useEffect(() => {
-    heading.current?.focus();
-  }, []);
+    if (section === "model") document.getElementById("model-title")?.focus();
+    else if (!section) heading.current?.focus();
+  }, [section]);
   return (
     <main
       className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8 sm:px-8"
@@ -87,7 +92,9 @@ export function SettingsPage({
               )}
               {shortcut && shortcut.backend !== "manual" && (
                 <>
-                  {(!shortcut.label || shortcut.backend === "portal") && (
+                  {shortcut.backend === "native" ? (
+                    <ShortcutRecorder busy={busy} enabled={!!shortcut.label} />
+                  ) : (
                     <Button
                       variant="outline"
                       disabled={shortcut.configuring}
@@ -97,9 +104,7 @@ export function SettingsPage({
                         ? "Waiting for shortcut…"
                         : shortcut.label
                           ? "Change shortcut…"
-                          : shortcut.backend === "native"
-                            ? "Enable Control + Option + Space"
-                            : "Set up shortcut…"}
+                          : "Set up shortcut…"}
                     </Button>
                   )}
                   {shortcut.label && (
@@ -144,10 +149,13 @@ export function SettingsPage({
             </div>
           )}
         </section>
+        {!demo && shortcut?.backend === "native" && (
+          <Permissions focus={section === "permissions"} />
+        )}
         {!demo && <FeedbackSettings />}
         {!demo && <OverlaySettings />}
         <section className="settings-section" aria-labelledby="model-title">
-          <h2 id="model-title" className="section-label">
+          <h2 id="model-title" tabIndex={-1} className="section-label">
             Speech model
           </h2>
           {models ? (

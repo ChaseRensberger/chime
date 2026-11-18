@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "#components/core/button";
 import { SettingsPage } from "./components/SettingsPage";
+import { AppBrand } from "./components/AppBrand";
 import { HistoryPage } from "./components/HistoryPage";
 import { AudioVisualization } from "./components/AudioVisualization";
 import { ShortcutHint } from "./components/ShortcutHint";
@@ -40,6 +41,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
   const state = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const [settings, setSettings] = useState(loadSettings);
   const [page, setPage] = useState<Page>("dictation");
+  const [settingsSection, setSettingsSection] = useState<"model" | "permissions" | null>(null);
   const nav = useRef<HTMLElement>(null);
   const [outcome, setOutcome] = useState<DemoOutcome>("success");
   const [notice, setNotice] = useState("");
@@ -52,8 +54,8 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
     else document.documentElement.dataset.mode = settings.appearance;
   }, [settings.appearance]);
   useEffect(() => {
-    document.getElementById(`${page}-title`)?.focus();
-  }, [page]);
+    if (page !== "settings" || !settingsSection) document.getElementById(`${page}-title`)?.focus();
+  }, [page, settingsSection]);
   useEffect(() => {
     setCopied(false);
   }, [state.lastResult]);
@@ -109,7 +111,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
   return (
     <div className="app-shell">
       <header className="flex items-center justify-between gap-3 border-b px-4 py-4 sm:px-8">
-        <span className="text-lg font-semibold tracking-tight">Chime</span>
+        <AppBrand demo={demo} />
         <nav ref={nav} aria-label="Main navigation" className="flex items-center gap-1">
           {(
             [
@@ -125,7 +127,10 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
               size="sm"
               aria-label={label}
               aria-current={page === value ? "page" : undefined}
-              onClick={() => setPage(value)}
+              onClick={() => {
+                setSettingsSection(null);
+                setPage(value);
+              }}
             >
               <Icon aria-hidden="true" />
               <span className="hidden sm:inline">{label}</span>
@@ -136,6 +141,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
 
       {page === "settings" ? (
         <SettingsPage
+          section={settingsSection}
           settings={settings}
           onChange={changeSettings}
           outcome={outcome}
@@ -165,6 +171,23 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
             className="flex min-h-80 flex-1 flex-col items-center justify-center gap-6"
             aria-label="Dictation controls"
           >
+            {state.modelAvailable === false ? (
+              <button
+                className="rounded-full border px-3 py-1 text-xs text-link hover:underline"
+                onClick={() => {
+                  setSettingsSection("model");
+                  setPage("settings");
+                }}
+              >
+                Choose a speech model to start dictating →
+              </button>
+            ) : (
+              (state.modelName || demo) && (
+                <span className="max-w-full break-words rounded-full border px-3 py-1 text-center text-xs text-muted-foreground">
+                  {demo ? "Preview model · Parakeet Unified English" : `Model · ${state.modelName}`}
+                </span>
+              )
+            )}
             <AudioVisualization phase={state.phase} level={state.level ?? 0} demo={demo} />
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span role="status">
@@ -178,7 +201,9 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                       ? "Transcribing"
                       : state.phase === "error"
                         ? "Try again"
-                        : "Ready"}
+                        : state.modelAvailable === false
+                          ? "Awaiting model"
+                          : "Ready"}
               </span>
               {state.phase === "recording" && state.startedAt !== null && (
                 <Elapsed startedAt={state.startedAt} />
@@ -230,11 +255,6 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                   )}
                 </div>
               )}
-              {!demo && state.modelAvailable === false && (
-                <Button variant="outline" onClick={() => setPage("settings")}>
-                  Set up speech model
-                </Button>
-              )}
             </div>
           </section>
 
@@ -242,6 +262,18 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
             <section aria-label="Last transcript" className="flex flex-col gap-3 border-t pt-4">
               <div className="flex items-center justify-end gap-3">
                 <div className="flex items-center gap-1">
+                  {state.pasteFailed && state.shortcut?.backend === "native" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSettingsSection("permissions");
+                        setPage("settings");
+                      }}
+                    >
+                      Review permissions
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => void copyResult()}>
                     {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                     {copied ? "Copied" : "Copy"}

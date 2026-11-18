@@ -16,11 +16,12 @@ pub enum Mode {
     Hold,
 }
 
-#[derive(Default, Copy, Clone, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
     mode: Mode,
     enabled: bool,
+    chord: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -51,7 +52,7 @@ impl Shortcuts {
 
     fn save(&self, change: impl FnOnce(&mut Preferences)) -> Result<(), String> {
         let mut current = self.prefs.lock().unwrap();
-        let mut next = *current;
+        let mut next = current.clone();
         change(&mut next);
         std::fs::create_dir_all(self.path.parent().ok_or("Invalid preferences path")?)
             .map_err(|e| e.to_string())?;
@@ -59,14 +60,22 @@ impl Shortcuts {
         std::fs::write(&tmp, serde_json::to_vec(&next).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         std::fs::rename(tmp, &self.path).map_err(|e| e.to_string())?;
-        *current = next;
         self.state.lock().unwrap().mode = next.mode;
+        *current = next;
         Ok(())
     }
 }
 
 fn event(app: &tauri::AppHandle, down: bool) {
     let keys = app.state::<Shortcuts>();
+    #[cfg(target_os = "macos")]
+    if keys.state.lock().unwrap().configuring {
+        use tauri::Emitter;
+        if down {
+            let _ = app.emit_to("main", "shortcut-current", ());
+        }
+        return;
+    }
     if keys.pressed.swap(down, Ordering::SeqCst) == down {
         return;
     }
@@ -98,7 +107,7 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
     let (configure, rx) = tokio::sync::mpsc::channel(1);
     app.manage(Shortcuts {
         path,
-        prefs: Mutex::new(prefs),
+        prefs: Mutex::new(prefs.clone()),
         pressed: AtomicBool::new(false),
         state: Mutex::new(Status {
             configuring: false,
@@ -123,8 +132,10 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
         let keys = app.state::<Shortcuts>();
         keys.state.lock().unwrap().backend = "native";
         if prefs.enabled {
-            if let Err(error) = register_mac(app.handle()) {
-                keys.state.lock().unwrap().error = Some(error);
+            let chord = prefs.chord.as_deref().unwrap_or("Control+Alt+Space");
+            match register_mac(app.handle(), chord) {
+                Ok(()) => keys.state.lock().unwrap().label = Some(mac_label(chord)),
+                Err(error) => keys.state.lock().unwrap().error = Some(error),
             }
         }
     }
@@ -132,31 +143,87 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn register_mac(app: &tauri::AppHandle) -> Result<(), String> {
+fn mac_label(chord: &str) -> String {
+    chord
+        .split('+')
+        .map(|key| match key {
+            "Alt" => "Option",
+            "Super" => "Command",
+            other => other
+                .strip_prefix("Key")
+                .or_else(|| other.strip_prefix("Digit"))
+                .unwrap_or(other),
+        })
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
+#[cfg(target_os = "macos")]
+fn register_mac(app: &tauri::AppHandle, chord: &str) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-    let keys = app.state::<Shortcuts>();
-    if keys.state.lock().unwrap().label.is_some() {
-        return Ok(());
-    }
     app.global_shortcut()
-        .on_shortcut("Control+Alt+Space", |app, _, e| {
+        .on_shortcut(chord, |app, _, e| {
             event(app, e.state == ShortcutState::Pressed)
         })
-        .map_err(|e| format!("Could not register Control + Option + Space: {e}"))?;
-    let mut state = keys.state.lock().unwrap();
-    state.label = Some("Control + Option + Space".into());
-    state.error = None;
+        .map_err(|_| format!("{} is unavailable. Try another shortcut.", mac_label(chord)))
+}
+
+#[tauri::command]
+pub async fn shortcut_record(app: tauri::AppHandle, recording: bool) -> Result<(), String> {
+    let keys = app.state::<Shortcuts>();
+    let mut status = keys.state.lock().unwrap();
+    if status.backend != "native" {
+        return Err("Use your desktop’s shortcut settings.".into());
+    }
+    status.configuring = recording;
+    keys.pressed.store(false, Ordering::SeqCst);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn shortcut_configure(app: tauri::AppHandle) -> Result<(), String> {
-    let keys = app.state::<Shortcuts>();
+pub async fn shortcut_bind(app: tauri::AppHandle, chord: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        register_mac(&app)?;
-        keys.save(|p| p.enabled = true)
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let keys = app.state::<Shortcuts>();
+        if !keys.state.lock().unwrap().configuring {
+            return Err("Shortcut recording ended.".into());
+        }
+        let previous = keys.prefs.lock().unwrap().clone();
+        let old = previous.chord.as_deref().unwrap_or("Control+Alt+Space");
+        let registered = keys.state.lock().unwrap().label.is_some();
+        if !(registered && old == chord) {
+            register_mac(&app, &chord)?;
+            if let Err(error) = keys.save(|p| {
+                p.enabled = true;
+                p.chord = Some(chord.clone());
+            }) {
+                let _ = app.global_shortcut().unregister(chord.as_str());
+                return Err(error);
+            }
+            if registered {
+                if let Err(error) = app.global_shortcut().unregister(old) {
+                    let _ = app.global_shortcut().unregister(chord.as_str());
+                    keys.save(|p| *p = previous.clone())?;
+                    return Err(error.to_string());
+                }
+            }
+        }
+        let mut state = keys.state.lock().unwrap();
+        state.configuring = false;
+        state.error = None;
+        state.label = Some(mac_label(&chord));
+        Ok(())
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, chord);
+        Err("Use your desktop’s shortcut settings.".into())
+    }
+}
+#[tauri::command]
+pub async fn shortcut_configure(app: tauri::AppHandle) -> Result<(), String> {
+    let keys = app.state::<Shortcuts>();
     #[cfg(target_os = "linux")]
     {
         let mut status = keys.state.lock().unwrap();
@@ -170,8 +237,9 @@ pub async fn shortcut_configure(app: tauri::AppHandle) -> Result<(), String> {
         status.error = None;
         Ok(())
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(target_os = "linux"))]
     {
+        let _ = keys;
         Err("Use a desktop shortcut on this system.".into())
     }
 }

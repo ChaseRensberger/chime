@@ -28,7 +28,6 @@ pub struct Snapshot {
     phase: String,
     #[serde(skip)]
     revision: u64,
-    #[serde(skip)]
     paste_failed: bool,
     #[serde(skip)]
     delivery_pending: bool,
@@ -39,6 +38,7 @@ pub struct Snapshot {
     message: Option<String>,
     level: f32,
     model_path: String,
+    model_name: String,
     model_loaded: bool,
     model_available: bool,
     shortcut_command: String,
@@ -144,13 +144,10 @@ impl Sessions {
             shortcut_paused: false,
             started_at: None,
             last_result: None,
-            message: if model.is_file() {
-                None
-            } else {
-                Some("Choose a speech model in Settings.".into())
-            },
+            message: None,
             level: 0.0,
             model_path: model.to_string_lossy().into_owned(),
+            model_name: crate::models::display_name(&model),
             model_loaded: false,
             model_available: model.is_file(),
             shortcut_command: format!(
@@ -404,6 +401,7 @@ impl Sessions {
                                 model = path;
                                 let mut state = state.lock().unwrap();
                                 state.model_path = model.to_string_lossy().into_owned();
+                                state.model_name = crate::models::display_name(&model);
                                 state.model_loaded = true;
                                 state.model_available = true;
                                 state.phase("idle", Some("Model ready.".into()));
@@ -464,6 +462,7 @@ impl Sessions {
                                 let paste_failed = result.is_err();
                                 let message = match result {
                                     Ok(()) => "Paste shortcut sent to the focused app.".into(),
+                                    Err(_) if cfg!(target_os = "macos") => "Couldn’t paste into the focused app. Your transcript is ready to copy.".into(),
                                     Err(error) => format!("Automatic paste unavailable: {error}. Use Copy, then paste manually."),
                                 };
                                 let mut state = state.lock().unwrap();
