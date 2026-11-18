@@ -65,7 +65,21 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.isComposing || event.repeat) return;
+      if (
+        event.isComposing ||
+        event.repeat ||
+        event.defaultPrevented ||
+        event
+          .composedPath()
+          .some(
+            (el) =>
+              el instanceof HTMLElement &&
+              el.matches(
+                '[role="listbox"], [role="alertdialog"], [aria-expanded="true"][role="combobox"]',
+              ),
+          )
+      )
+        return;
       if (page !== "dictation") {
         if (event.key === "Escape") {
           setPage("dictation");
@@ -158,7 +172,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
           }}
         />
       ) : page === "history" ? (
-        <HistoryPage source={history} result={state.lastResult} demo={demo} />
+        <HistoryPage source={history} result={state.lastResult} />
       ) : (
         <main
           className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-8 sm:px-8"
@@ -171,22 +185,20 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
             className="flex min-h-80 flex-1 flex-col items-center justify-center gap-6"
             aria-label="Dictation controls"
           >
-            {state.modelAvailable === false ? (
+            {(state.modelAvailable === false || state.modelName || demo) && (
               <button
-                className="rounded-full border px-3 py-1 text-xs text-link hover:underline"
+                className="max-w-full break-words rounded-full border px-3 py-1 text-xs text-link hover:underline"
                 onClick={() => {
                   setSettingsSection("model");
                   setPage("settings");
                 }}
               >
-                Choose a speech model to start dictating →
+                {state.modelAvailable === false
+                  ? "Choose a speech model to start dictating →"
+                  : demo
+                    ? "Preview model · Parakeet Unified English"
+                    : `Model · ${state.modelName}`}
               </button>
-            ) : (
-              (state.modelName || demo) && (
-                <span className="max-w-full break-words rounded-full border px-3 py-1 text-center text-xs text-muted-foreground">
-                  {demo ? "Preview model · Parakeet Unified English" : `Model · ${state.modelName}`}
-                </span>
-              )
             )}
             <AudioVisualization phase={state.phase} level={state.level ?? 0} demo={demo} />
             <div className="flex items-center gap-3 text-xs text-muted-foreground">

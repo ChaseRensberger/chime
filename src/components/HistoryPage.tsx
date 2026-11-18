@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Trash, X } from "@phosphor-icons/react";
+import { Copy, Trash } from "@phosphor-icons/react";
 import { Button } from "#components/core/button";
-import { NativeSelect } from "#components/core/native-select";
+import { ChoiceSelect } from "./ChoiceSelect";
+import { Input } from "#components/core/input";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "#components/core/alert-dialog";
 import type { HistoryListing, HistorySource, Retention } from "../engine/history";
 import type { Transcript } from "../engine/types";
 
@@ -16,11 +26,9 @@ const labels: [Retention, string][] = [
 export function HistoryPage({
   source,
   result,
-  demo,
 }: {
   source: HistorySource;
   result: Transcript | null;
-  demo: boolean;
 }) {
   const [listing, setListing] = useState<HistoryListing | null>(null);
   const [query, setQuery] = useState("");
@@ -29,15 +37,17 @@ export function HistoryPage({
   const [pending, setPending] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [deleting, setDeleting] = useState<{ id: number; text: string } | null>(null);
-  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
   const [pruning, setPruning] = useState<{ retention: Retention; count: number } | null>(null);
   const [notice, setNotice] = useState("");
   const search = useRef<HTMLInputElement>(null);
   const detail = listing?.entries.find((entry) => entry.id === selected) ?? listing?.entries[0];
 
-  useEffect(() => {
-    if (deleting || pruning) deleteDialog.current?.showModal();
-  }, [deleting, pruning]);
+  function closeConfirmation() {
+    setDeleting(null);
+    setPruning(null);
+    setConfirmClear(false);
+  }
 
   async function applyRetention(retention: Retention, confirmed = 0) {
     setPending(true);
@@ -47,11 +57,11 @@ export function HistoryPage({
         setPruning({ retention, count });
         return;
       }
-      deleteDialog.current?.close();
+      closeConfirmation();
       setNotice("Retention updated.");
       setRefresh((n) => n + 1);
     } catch (error) {
-      deleteDialog.current?.close();
+      closeConfirmation();
       setNotice(String(error));
     } finally {
       setPending(false);
@@ -88,7 +98,6 @@ export function HistoryPage({
       setNotice(String(error));
     } finally {
       setPending(false);
-      setConfirmClear(false);
     }
   }
 
@@ -109,51 +118,28 @@ export function HistoryPage({
           <label htmlFor="retention" className="text-xs text-muted-foreground">
             Keep
           </label>
-          <NativeSelect
+          <ChoiceSelect
             id="retention"
             className="w-auto"
             value={listing?.retention ?? "week"}
             disabled={!listing || pending}
-            onChange={(event) => void applyRetention(event.target.value as Retention)}
-          >
-            {labels.map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={(value) => void applyRetention(value as Retention)}
+            options={labels.map(([value, label]) => ({ value, label }))}
+          />
           <Button
             variant="ghost"
             size="sm"
             disabled={!listing?.total || pending}
-            onClick={() =>
-              confirmClear
-                ? void change(() => source.clear(), "History cleared.")
-                : setConfirmClear(true)
-            }
+            onClick={() => setConfirmClear(true)}
           >
             <Trash aria-hidden="true" />
-            {confirmClear ? "Confirm clear" : "Clear all"}
+            Clear all
           </Button>
-          {confirmClear && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Cancel clear history"
-              onClick={() => setConfirmClear(false)}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          )}
         </div>
       </div>
-      <p className="supporting">
-        {demo
-          ? "Demo history · kept only for this browser session."
-          : listing?.retention === "off"
-            ? "New transcripts aren’t saved. Existing entries stay until you delete them."
-            : "Saved on this device. Audio isn’t kept."}
-      </p>
+      {listing?.retention === "off" && (
+        <p className="supporting">History is off. Existing transcripts are kept.</p>
+      )}
       {listing?.error && (
         <p role="alert" className="supporting text-destructive">
           {listing.error}
@@ -165,7 +151,7 @@ export function HistoryPage({
           className="flex min-w-0 flex-col border-b md:border-r md:border-b-0"
         >
           <div className="border-b p-3">
-            <input
+            <Input
               ref={search}
               type="search"
               aria-label="Search history"
@@ -175,7 +161,6 @@ export function HistoryPage({
                 setQuery(event.target.value);
                 setSelected(null);
               }}
-              className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring"
             />
           </div>
           <ul className="max-h-64 overflow-y-auto md:max-h-[32rem]">
@@ -220,7 +205,7 @@ export function HistoryPage({
           className="flex min-w-0 flex-col gap-5 p-5 sm:p-6"
           aria-label="Selected transcript"
         >
-          {detail ? (
+          {detail && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="supporting">
@@ -254,63 +239,64 @@ export function HistoryPage({
                 {detail.text}
               </p>
             </>
-          ) : (
-            <p className="supporting">
-              {query ? "Try another search." : "Your completed dictations will appear here."}
-            </p>
           )}
         </section>
       </div>
       <p role="status" className="supporting min-h-5">
         {notice}
       </p>
-      <dialog
-        ref={deleteDialog}
-        aria-labelledby="delete-title"
-        aria-describedby="delete-warning"
-        className="m-auto w-[min(24rem,90vw)] rounded-sm border bg-background p-5 text-foreground backdrop:bg-black/40"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") event.stopPropagation();
-        }}
-        onClose={() => {
-          setDeleting(null);
-          setPruning(null);
+      <AlertDialog
+        open={!!(deleting || pruning || confirmClear)}
+        onOpenChange={(open) => {
+          if (!open) closeConfirmation();
         }}
       >
-        <h2 id="delete-title" className="font-semibold">
-          {pruning
-            ? `Delete ${pruning.count} older transcript${pruning.count === 1 ? "" : "s"}?`
-            : "Delete this transcript?"}
-        </h2>
-        <p id="delete-warning" className="supporting my-3">
-          {pruning
-            ? `Keeping ${labels.find(([value]) => value === pruning.retention)?.[1]} of history removes these entries. This can’t be undone.`
-            : "This removes it from History. This can’t be undone."}
-        </p>
-        <blockquote className="line-clamp-2 break-words text-sm">{deleting?.text}</blockquote>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" autoFocus onClick={() => deleteDialog.current?.close()}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={(!deleting && !pruning) || pending}
-            onClick={() => {
-              if (pruning) {
-                void applyRetention(pruning.retention, pruning.count);
-                return;
-              }
-              if (!deleting) return;
-              const { id } = deleting;
-              deleteDialog.current?.close();
-              void change(() => source.remove(id), "Transcript deleted.");
-              search.current?.focus();
-            }}
-          >
-            Delete
-          </Button>
-        </div>
-      </dialog>
+        <AlertDialogContent initialFocus={cancel}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmClear
+                ? "Clear all transcripts?"
+                : pruning
+                  ? `Delete ${pruning.count} older transcript${pruning.count === 1 ? "" : "s"}?`
+                  : "Delete this transcript?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmClear
+                ? "This deletes every transcript in History, including any hidden by your search. This can’t be undone."
+                : pruning
+                  ? `Keeping ${labels.find(([value]) => value === pruning.retention)?.[1]} of history removes these entries. This can’t be undone.`
+                  : "This removes it from History. This can’t be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <blockquote className="line-clamp-2 break-words text-sm">{deleting?.text}</blockquote>
+          <AlertDialogFooter>
+            <AlertDialogCancel ref={cancel}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={(!deleting && !pruning && !confirmClear) || pending}
+              onClick={() => {
+                if (confirmClear) {
+                  closeConfirmation();
+                  void change(() => source.clear(), "History cleared.");
+                  search.current?.focus();
+                  return;
+                }
+                if (pruning) {
+                  void applyRetention(pruning.retention, pruning.count);
+                  return;
+                }
+                if (!deleting) return;
+                const { id } = deleting;
+                closeConfirmation();
+                void change(() => source.remove(id), "Transcript deleted.");
+                search.current?.focus();
+              }}
+            >
+              {confirmClear ? "Clear all" : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

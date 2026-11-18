@@ -111,7 +111,7 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
         pressed: AtomicBool::new(false),
         state: Mutex::new(Status {
             configuring: false,
-            backend: "manual",
+            backend: "detecting",
             label: None,
             error: None,
             mode: prefs.mode,

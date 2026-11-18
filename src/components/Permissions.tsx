@@ -8,7 +8,7 @@ const items = [
   ["automation", "Automation", "Let Chime use System Events for automatic paste."],
 ] as const;
 type Kind = (typeof items)[number][0];
-type Status = Record<Kind, string>;
+type Status = Record<Kind, string> & { appPath: string | null };
 
 export function Permissions({ focus }: { focus: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -54,6 +54,19 @@ export function Permissions({ focus }: { focus: boolean }) {
                 {label} · {status[kind]}
               </p>
               <p className="supporting">{reason}</p>
+              {kind === "accessibility" && status.accessibility !== "Allowed" && (
+                <details className="supporting mt-1 break-words">
+                  <summary>Already enabled?</summary>
+                  Check that Accessibility lists this copy of Chime
+                  {status.appPath && (
+                    <>
+                      {" "}
+                      (<span className="select-text break-all">{status.appPath}</span>)
+                    </>
+                  )}
+                  . If it lists an older copy, remove that entry and add this one.
+                </details>
+              )}
             </div>
             {status[kind] !== "Allowed" && (
               <Button
@@ -75,7 +88,9 @@ export function Permissions({ focus }: { focus: boolean }) {
                   }
                 }}
               >
-                {status[kind] === "Needs access" ? "Open settings" : "Request access"}
+                {kind === "accessibility" || status[kind] === "Needs access"
+                  ? "Open settings"
+                  : "Request access"}
               </Button>
             )}
           </div>

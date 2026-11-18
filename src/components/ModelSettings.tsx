@@ -1,3 +1,4 @@
+import { Progress, ProgressTrack, ProgressIndicator } from "#components/core/progress";
 import { useEffect, useState } from "react";
 import { Button } from "#components/core/button";
 import type { ModelService, ModelSnapshot } from "../engine/models";
@@ -63,10 +64,6 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
   const target = snapshot?.entries.find((entry) => entry.id === progress?.modelId);
   return (
     <div className="flex flex-col gap-4">
-      <p className="supporting">
-        Download a speech model or import a compatible GGUF file. After setup, dictation works
-        offline.
-      </p>
       {!snapshot && (
         <p role="status" className="supporting">
           Loading models…
@@ -124,12 +121,15 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
           </div>
           {progress.total > 0 && (
             <>
-              <progress
-                className="h-2 w-full accent-link"
+              <Progress
                 aria-label={stages[progress.stage] ?? "Model progress"}
                 max={progress.total}
                 value={progress.downloaded}
-              />
+              >
+                <ProgressTrack>
+                  <ProgressIndicator />
+                </ProgressTrack>
+              </Progress>
               <p className="supporting tabular-nums">
                 {megabytes(progress.downloaded)} / {megabytes(progress.total)}
               </p>
@@ -156,9 +156,6 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
           </Button>
         )}
       </div>
-      <p className="supporting">
-        Imports are copied into Chime’s model folder. Your original file stays where it is.
-      </p>
       <p className="supporting">
         Recommended model:{" "}
         <a

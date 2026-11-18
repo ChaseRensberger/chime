@@ -6,6 +6,7 @@ fn main() {
             .compile("chime_permissions");
         for framework in [
             "ApplicationServices",
+            "CoreGraphics",
             "CoreServices",
             "AVFoundation",
             "Foundation",

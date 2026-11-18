@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "#components/core/button";
-import { NativeSelect } from "#components/core/native-select";
+import { ChoiceSelect } from "./ChoiceSelect";
+import { Checkbox } from "#components/core/checkbox";
 
 interface Preferences {
   enabled: boolean;
@@ -56,37 +57,37 @@ export function FeedbackSettings() {
       <h2 id="feedback-title" className="section-label">
         Recording sounds
       </h2>
-      <p className="supporting">
-        Hear when the microphone starts listening and when recording stops, even with Chime hidden.
-      </p>
       {preferences ? (
         <>
           <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              className="accent-primary"
+            <Checkbox
               checked={preferences.enabled}
               disabled={pending}
-              onChange={(event) => void save({ ...preferences, enabled: event.target.checked })}
+              onCheckedChange={(enabled) => void save({ ...preferences, enabled })}
             />
             Play recording sounds
           </label>
           <label className="flex flex-col gap-2">
             Volume
-            <NativeSelect
+            <ChoiceSelect
+              aria-label="Volume"
               disabled={pending || !preferences.enabled}
-              value={preferences.volume}
-              onChange={(event) =>
-                void save({ ...preferences, volume: Number(event.target.value) })
-              }
-            >
-              <option value={0.15}>Quiet</option>
-              <option value={0.35}>Balanced</option>
-              <option value={0.65}>Loud</option>
-              {![0.15, 0.35, 0.65].includes(preferences.volume) && (
-                <option value={preferences.volume}>{Math.round(preferences.volume * 100)}%</option>
-              )}
-            </NativeSelect>
+              value={String(preferences.volume)}
+              onChange={(value) => void save({ ...preferences, volume: Number(value) })}
+              options={[
+                { value: "0.15", label: "Quiet" },
+                { value: "0.35", label: "Balanced" },
+                { value: "0.65", label: "Loud" },
+                ...([0.15, 0.35, 0.65].includes(preferences.volume)
+                  ? []
+                  : [
+                      {
+                        value: String(preferences.volume),
+                        label: `${Math.round(preferences.volume * 100)}%`,
+                      },
+                    ]),
+              ]}
+            />
           </label>
           <Button
             variant="outline"

@@ -34,8 +34,10 @@ export function AppBrand({ demo }: { demo: boolean }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       <img src={logo} alt="" width="24" height="24" />
-      <span className="text-lg font-semibold tracking-tight">Chime</span>
-      {version && <span className="text-xs text-muted-foreground">v{version}</span>}
+      <span className="inline-flex items-baseline gap-2">
+        <span className="text-lg font-semibold tracking-tight">Chime</span>
+        {version && <span className="text-xs text-muted-foreground">v{version}</span>}
+      </span>
       {update && (
         <button
           className="text-xs underline"

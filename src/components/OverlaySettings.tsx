@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "#components/core/button";
-import { NativeSelect } from "#components/core/native-select";
+import { ChoiceSelect } from "./ChoiceSelect";
 
 type Position = "top" | "bottom" | "hidden";
 interface Status {
@@ -46,22 +46,21 @@ export function OverlaySettings() {
       <h2 id="overlay-title" className="section-label">
         Recording overlay
       </h2>
-      <p className="supporting">
-        See when Chime is listening or transcribing without leaving your app.
-      </p>
       {status && (
         <>
           <label className="flex flex-col gap-2">
             Position
-            <NativeSelect
+            <ChoiceSelect
+              aria-label="Position"
               value={status.position}
               disabled={pending}
-              onChange={(event) => void save(event.target.value as Position)}
-            >
-              <option value="bottom">Bottom</option>
-              <option value="top">Top</option>
-              <option value="hidden">Hidden</option>
-            </NativeSelect>
+              onChange={(value) => void save(value as Position)}
+              options={[
+                { value: "bottom", label: "Bottom" },
+                { value: "top", label: "Top" },
+                { value: "hidden", label: "Hidden" },
+              ]}
+            />
           </label>
           <Button
             variant="outline"

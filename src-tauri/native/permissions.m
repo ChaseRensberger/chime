@@ -10,8 +10,9 @@ void chime_request_microphone(void) {
     [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {}];
 }
 
-bool chime_accessibility_ready(void) {
-    return AXIsProcessTrusted();
+int chime_accessibility_status(void) {
+    if (AXIsProcessTrusted()) return 1;
+    return CGPreflightPostEventAccess() ? 2 : 0;
 }
 
 int chime_automation_status(void) {

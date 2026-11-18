@@ -21,7 +21,7 @@ export interface EngineSnapshot {
   modelAvailable?: boolean;
   shortcutCommand?: string;
   shortcut?: {
-    backend: "manual" | "portal" | "native";
+    backend: "detecting" | "manual" | "portal" | "native";
     label: string | null;
     error: string | null;
     paused: boolean;

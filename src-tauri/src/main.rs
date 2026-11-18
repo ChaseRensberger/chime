@@ -3,6 +3,7 @@
 mod feedback;
 mod history;
 mod inference;
+mod microphones;
 mod model;
 mod models;
 mod output;
@@ -13,6 +14,15 @@ mod shortcuts;
 mod tray;
 mod updates;
 use tauri::Manager;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+
+fn launch_commands(
+    initial: Vec<String>,
+) -> (UnboundedSender<Vec<String>>, UnboundedReceiver<Vec<String>>) {
+    let (tx, rx) = unbounded_channel();
+    tx.send(initial).expect("launch command receiver exists");
+    (tx, rx)
+}
 
 fn show_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -23,22 +33,28 @@ fn show_window(app: &tauri::AppHandle) {
 }
 
 fn dispatch(app: &tauri::AppHandle, args: &[String]) {
-    let Some(sessions) = app.try_state::<session::Sessions>() else {
-        return;
-    };
+    let sessions = app.state::<session::Sessions>();
     if args.iter().any(|a| a == "--quit") {
         app.exit(0);
     } else if args.iter().any(|a| a == "--cancel") {
         sessions.cancel();
+    } else if args.iter().any(|a| a == "--stop") {
+        sessions.hold(false);
+    } else if args.iter().any(|a| a == "--paste-last") {
+        sessions.paste_last();
     } else if args
         .iter()
-        .any(|a| a == "--toggle" || a == "--toggle-terminal")
+        .any(|a| a == "--start" || a == "--toggle" || a == "--toggle-terminal")
     {
         if sessions.shortcut_paused() {
             return;
         }
         if !sessions.needs_model_to_start() {
-            sessions.toggle(args.iter().any(|a| a == "--toggle-terminal"));
+            if args.iter().any(|a| a == "--start") {
+                sessions.hold(true);
+            } else {
+                sessions.toggle(args.iter().any(|a| a == "--toggle-terminal"));
+            }
         } else {
             show_window(app);
         }
@@ -55,14 +71,15 @@ fn main() {
         }
         return;
     }
+    let (commands, mut incoming) = launch_commands(std::env::args().collect());
     tauri::Builder::default()
         .manage(updates::Updates::default())
-        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
-            dispatch(app, &args)
+        .plugin(tauri_plugin_single_instance::init(move |_, args, _| {
+            let _ = commands.send(args);
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
             let config = app.path().app_config_dir()?.join("model.json");
             let fallback = std::env::var_os("CHIME_MODEL_PATH")
                 .map(std::path::PathBuf::from)
@@ -94,7 +111,12 @@ fn main() {
             )));
             tray::setup(app.handle())?;
             overlay::setup(app.handle())?;
-            dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(args) = incoming.recv().await {
+                    dispatch(&handle, &args);
+                }
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -108,6 +130,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            microphones::microphones_list,
+            microphones::microphone_select,
             updates::update_check,
             updates::update_download,
             permissions::permissions_status,
@@ -147,4 +171,19 @@ fn main() {
                 app.state::<session::Sessions>().shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod launch_tests {
+    #[test]
+    fn cold_start_press_precedes_release_received_before_setup() {
+        let args = |flag: &str| vec!["chime".to_owned(), flag.to_owned()];
+        let (forward, mut incoming) = super::launch_commands(args("--start"));
+        forward.send(args("--stop")).unwrap();
+        assert_eq!(incoming.try_recv().unwrap(), args("--start"));
+        forward.send(args("--toggle")).unwrap();
+        assert_eq!(incoming.try_recv().unwrap(), args("--stop"));
+        assert_eq!(incoming.try_recv().unwrap(), args("--toggle"));
+        assert!(incoming.try_recv().is_err());
+    }
 }

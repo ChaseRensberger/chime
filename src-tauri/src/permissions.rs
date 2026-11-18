@@ -3,13 +3,15 @@ pub struct Permissions {
     microphone: &'static str,
     accessibility: &'static str,
     automation: &'static str,
+    #[serde(rename = "appPath")]
+    app_path: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
 extern "C" {
     fn chime_microphone_status() -> i32;
     fn chime_request_microphone();
-    fn chime_accessibility_ready() -> bool;
+    fn chime_accessibility_status() -> i32;
     fn chime_automation_status() -> i32;
 }
 
@@ -18,15 +20,20 @@ pub async fn permissions_status() -> Option<Permissions> {
     #[cfg(target_os = "macos")]
     unsafe {
         Some(Permissions {
+            app_path: std::env::current_exe().ok().and_then(|exe| {
+                exe.ancestors()
+                    .find(|p| p.extension().is_some_and(|ext| ext == "app"))
+                    .map(|p| p.display().to_string())
+            }),
             microphone: match chime_microphone_status() {
                 0 => "Not requested",
                 3 => "Allowed",
                 _ => "Needs access",
             },
-            accessibility: if chime_accessibility_ready() {
-                "Allowed"
-            } else {
-                "Needs access"
+            accessibility: match chime_accessibility_status() {
+                1 => "Allowed",
+                2 => "Check access",
+                _ => "Needs access",
             },
             automation: match chime_automation_status() {
                 0 => "Allowed",

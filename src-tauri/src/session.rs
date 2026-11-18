@@ -92,6 +92,7 @@ enum Action {
 }
 
 pub struct Sessions {
+    pub microphones: Arc<crate::microphones::Microphones>,
     state: Arc<Mutex<Snapshot>>,
     tx: mpsc::Sender<Action>,
     generation: Arc<AtomicU64>,
@@ -134,6 +135,9 @@ impl Sink for Capture {
 
 impl Sessions {
     pub fn new(mut model: PathBuf, config: PathBuf, history: Arc<crate::history::History>) -> Self {
+        let microphones = Arc::new(crate::microphones::Microphones::load(
+            config.with_file_name("microphone.json"),
+        ));
         let state = Arc::new(Mutex::new(Snapshot {
             shortcut: None,
             feedback: None,
@@ -151,7 +155,7 @@ impl Sessions {
             model_loaded: false,
             model_available: model.is_file(),
             shortcut_command: format!(
-                "'{}' --toggle",
+                "'{}'",
                 // AppImage mounts are temporary; desktop bindings must launch the image itself.
                 if cfg!(target_os = "linux") {
                     std::env::var_os("APPIMAGE")
@@ -167,6 +171,7 @@ impl Sessions {
         let generation = Arc::new(AtomicU64::new(0));
         let (tx, rx) = mpsc::channel();
         let actor = {
+            let microphones = microphones.clone();
             let state = state.clone();
             let generation = generation.clone();
             let tx = tx.clone();
@@ -261,8 +266,18 @@ impl Sessions {
                             let id = generation.fetch_add(1, Ordering::SeqCst) + 1;
                             state.lock().unwrap().phase("starting", None);
                             let errors = tx.clone();
+                            let device = match microphones.capture_device() {
+                                Ok(device) => device,
+                                Err(error) => {
+                                    state.lock().unwrap().phase("error", Some(error));
+                                    continue;
+                                }
+                            };
                             let opened = Recorder::open_with_failure_handler(
-                                RecorderConfig::speech(),
+                                RecorderConfig {
+                                    device,
+                                    ..RecorderConfig::speech()
+                                },
                                 move |e| {
                                     let _ = errors.send(Action::Failed(id, e.to_string()));
                                 },
@@ -495,6 +510,7 @@ impl Sessions {
             tx,
             generation,
             actor: Mutex::new(Some(actor)),
+            microphones,
         }
     }
 
