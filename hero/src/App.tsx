@@ -32,10 +32,13 @@ export function App() {
         </nav>
       </header>
 
-      <main id="main" className="flex flex-1 flex-col items-center justify-center py-4">
+      <main
+        id="main"
+        className="flex flex-1 flex-col items-center justify-center gap-[clamp(2.5rem,9dvh,6rem)] py-3"
+      >
         <section
           aria-labelledby="hero-title"
-          className="flex w-full max-w-xl flex-col items-center gap-4 text-center"
+          className="flex w-full max-w-xl flex-col items-center gap-[clamp(1rem,3dvh,2rem)] text-center"
         >
           <div
             aria-hidden="true"
@@ -49,23 +52,14 @@ export function App() {
               />
             ))}
           </div>
-          <div className="flex flex-col items-center gap-3">
-            <p className="text-xs tracking-widest text-muted-foreground uppercase">
-              Local voice dictation
-            </p>
-            <h1
-              id="hero-title"
-              className="text-2xl leading-8 font-semibold tracking-tight sm:text-4xl sm:leading-10"
-            >
-              A little less typing.
-            </h1>
-            <p className="max-w-md text-base leading-7 text-muted-foreground">
-              Press a shortcut. Say what you mean.
-              <br className="hidden sm:block" /> Chime turns your voice into text, on your device.
-            </p>
-          </div>
-          <InstallPanel repository={repository} />
+          <h1
+            id="hero-title"
+            className="text-2xl leading-8 font-semibold tracking-tight sm:text-4xl sm:leading-10"
+          >
+            Simple local voice dictation
+          </h1>
         </section>
+        <InstallPanel repository={repository} />
       </main>
 
       <footer className="flex items-center justify-center border-t py-2 text-xs text-muted-foreground sm:py-3">
@@ -73,7 +67,7 @@ export function App() {
           href="https://rensberger.xyz"
           className="inline-flex min-h-11 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline"
         >
-          © {new Date().getFullYear()} Rensberger
+          Rensberger
         </a>
       </footer>
     </div>

@@ -10,7 +10,6 @@ use std::{
 use tauri::Manager;
 
 const MAX_ENTRIES: usize = 10_000;
-const MAX_TEXT: usize = 16 * 1024;
 const MAX_TOTAL: usize = 16 * 1024 * 1024;
 const MAX_FILE: u64 = 128 * 1024 * 1024;
 
@@ -91,16 +90,6 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn bound_text(text: &mut String) {
-    if text.len() > MAX_TEXT {
-        let mut end = MAX_TEXT;
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        text.truncate(end);
-    }
-}
-
 fn prune(saved: &mut Saved, now: u64) -> bool {
     let before = saved.entries.len();
     if let Some(age) = saved.retention.age() {
@@ -148,8 +137,7 @@ impl History {
             saved
                 .entries
                 .sort_by_key(|entry| (entry.timestamp_ms, entry.id));
-            for entry in &mut saved.entries {
-                bound_text(&mut entry.text);
+            for entry in &saved.entries {
                 saved.last_id = saved.last_id.max(entry.id);
             }
             Ok(saved)
@@ -219,19 +207,49 @@ impl History {
     }
 
     fn change(&self, update: impl FnOnce(&mut Saved)) -> Result<(), String> {
+        self.change_if(|next, _| {
+            update(next);
+            None
+        })
+        .map(|_| ())
+    }
+
+    fn retention(&self, retention: Retention, confirmed: usize) -> Result<usize, String> {
+        self.change_if(|next, now| {
+            let count = retention.age().map_or(0, |age| {
+                next.entries
+                    .iter()
+                    .filter(|e| e.timestamp_ms < now.saturating_sub(age))
+                    .count()
+            });
+            if count > confirmed {
+                return Some(count);
+            }
+            next.retention = retention;
+            None
+        })
+    }
+
+    fn change_if(
+        &self,
+        update: impl FnOnce(&mut Saved, u64) -> Option<usize>,
+    ) -> Result<usize, String> {
         let mut store = self.store.lock().unwrap();
         if !store.writable {
             return Err(store.error.clone().unwrap_or_default());
         }
         let mut next = store.saved.clone();
-        update(&mut next);
-        prune(&mut next, now_ms());
+        let now = now_ms();
+        if let Some(count) = update(&mut next, now) {
+            return Ok(count);
+        }
+        prune(&mut next, now);
         match self.persist(&next) {
             Ok(()) => {
                 store.saved = next;
                 store.error = None;
                 store.dirty = false;
-                Ok(())
+                Ok(0)
             }
             Err(error) => {
                 store.error = Some(format!("History could not be saved: {error}"));
@@ -244,12 +262,13 @@ impl History {
         if text.trim().is_empty() || self.store.lock().unwrap().saved.retention == Retention::Off {
             return Ok(());
         }
+        if text.len() > MAX_TOTAL {
+            return Err("Transcript exceeds the history storage limit.".into());
+        }
         self.change(|saved| {
             if saved.retention == Retention::Off {
                 return;
             }
-            let mut text = text;
-            bound_text(&mut text);
             saved.last_id = saved.last_id.saturating_add(1).max(now_ms());
             saved.entries.push(Entry {
                 id: saved.last_id,
@@ -315,18 +334,21 @@ pub async fn history_update(
     action: String,
     id: Option<u64>,
     retention: Option<Retention>,
-) -> Result<(), String> {
+    confirmed: Option<usize>,
+) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let history = app.state::<std::sync::Arc<History>>();
         match action.as_str() {
             "delete" => {
                 let id = id.ok_or("Missing entry")?;
-                history.change(|saved| saved.entries.retain(|e| e.id != id))
+                history
+                    .change(|saved| saved.entries.retain(|e| e.id != id))
+                    .map(|_| 0)
             }
-            "clear" => history.change(|saved| saved.entries.clear()),
+            "clear" => history.change(|saved| saved.entries.clear()).map(|_| 0),
             "retention" => {
                 let retention = retention.ok_or("Missing retention")?;
-                history.change(|saved| saved.retention = retention)
+                history.retention(retention, confirmed.unwrap_or_default())
             }
             _ => Err("Unknown history action".into()),
         }
@@ -418,9 +440,10 @@ mod tests {
 
     #[test]
     fn bounds_preserve_utf8_and_newest_entries() {
-        let mut text = "é".repeat(MAX_TEXT);
-        bound_text(&mut text);
-        assert_eq!(text.len(), MAX_TEXT);
+        let text = "é".repeat(20_000);
+        let history = History::memory();
+        history.record(text.clone(), 600_000).unwrap();
+        assert_eq!(history.list("").entries[0].text, text);
         let mut saved = Saved::default();
         saved.entries = (0..MAX_ENTRIES + 2)
             .map(|id| Entry {
@@ -437,12 +460,25 @@ mod tests {
             .map(|id| Entry {
                 id,
                 timestamp_ms: now_ms(),
-                text: "x".repeat(MAX_TEXT),
+                text: "x".repeat(16 * 1024),
                 duration_ms: 1,
             })
             .collect();
         prune(&mut saved, now_ms());
-        assert_eq!(saved.entries.len(), MAX_TOTAL / MAX_TEXT);
+        assert_eq!(saved.entries.len(), MAX_TOTAL / (16 * 1024));
         assert_eq!(saved.entries.last().unwrap().id, 1099);
+    }
+
+    #[test]
+    fn retention_changes_only_after_approval_of_the_current_count() {
+        let history = History::memory();
+        history.retention(Retention::Forever, 0).unwrap();
+        history.record("old".into(), 100).unwrap();
+        history.store.lock().unwrap().saved.entries[0].timestamp_ms = 0;
+        assert_eq!(history.retention(Retention::Day, 0).unwrap(), 1);
+        assert_eq!(history.list("").total, 1);
+        assert_eq!(history.list("").retention, Retention::Forever);
+        assert_eq!(history.retention(Retention::Day, 1).unwrap(), 0);
+        assert_eq!(history.list("").total, 0);
     }
 }

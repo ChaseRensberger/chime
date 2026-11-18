@@ -3,6 +3,24 @@
 
 use std::{borrow::Cow, fmt};
 
+pub const MAX_CHUNK_SAMPLES: usize = 16_000 * 60;
+
+pub fn next_chunk(samples: &[f32]) -> &[f32] {
+    const WINDOW: usize = 16_000 * 30;
+    if samples.len() <= WINDOW {
+        return samples;
+    }
+    let start = WINDOW - 16_000 * 5;
+    let window = 320;
+    let end = samples[start..WINDOW]
+        .chunks_exact(window)
+        .enumerate()
+        .min_by_key(|(_, chunk)| chunk.iter().map(|v| v * v).sum::<f32>().to_bits())
+        .map(|(index, _)| start + index * window + window / 2)
+        .unwrap_or(WINDOW);
+    &samples[..end]
+}
+
 /// Borrowed mono PCM samples at 16 kHz. Finite peaks outside [-1.0, 1.0]
 /// are clamped before inference; non-finite samples are rejected.
 pub struct Audio<'a> {
@@ -58,7 +76,7 @@ fn prepare_samples(samples: &[f32]) -> Result<Cow<'_, [f32]>, TranscriptionError
             "Recording contains no audio samples".into(),
         ));
     }
-    if samples.len() > 16_000 * 60 {
+    if samples.len() > MAX_CHUNK_SAMPLES {
         return Err(TranscriptionError::InvalidAudio(
             "Recording exceeds the 60-second limit at 16 kHz".into(),
         ));
@@ -100,6 +118,22 @@ impl Transcriber for LocalTranscriber {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn long_recordings_split_in_a_pause_and_preserve_every_sample() {
+        let mut audio = vec![0.5; MAX_CHUNK_SAMPLES * 2 + 100];
+        let pause = 16_000 * 30 - 3200;
+        audio[pause..pause + 320].fill(0.0);
+        assert_eq!(next_chunk(&audio).len(), pause + 160);
+        let mut remaining = audio.as_slice();
+        let mut total = 0;
+        while !remaining.is_empty() {
+            let chunk = next_chunk(remaining);
+            assert!(!chunk.is_empty() && chunk.len() <= MAX_CHUNK_SAMPLES);
+            total += chunk.len();
+            remaining = &remaining[chunk.len()..];
+        }
+        assert_eq!(total, audio.len());
+    }
     #[test]
     fn clips_finite_peaks_without_changing_input_or_quiet_samples() {
         let samples = [-1.1, -1.0, -0.25, 0.0, 0.25, 1.0, 1.01, f32::MAX];

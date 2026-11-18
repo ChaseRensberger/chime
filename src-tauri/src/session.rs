@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const MAX_SAMPLES: usize = 16_000 * 60;
+const MAX_SAMPLES: usize = 16_000 * 60 * 15;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,7 @@ pub struct Transcript {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    shortcut: Option<crate::shortcuts::Status>,
     #[serde(skip)]
     feedback: Option<crate::feedback::Sender>,
     phase: String,
@@ -31,6 +32,8 @@ pub struct Snapshot {
     paste_failed: bool,
     #[serde(skip)]
     delivery_pending: bool,
+    #[serde(skip)]
+    shortcut_paused: bool,
     started_at: Option<u64>,
     last_result: Option<Transcript>,
     message: Option<String>,
@@ -60,6 +63,8 @@ impl Snapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrayState {
+    pub shortcut_paused: bool,
+    pub delivery_pending: bool,
     pub phase: String,
     pub can_copy: bool,
     pub model_available: bool,
@@ -69,6 +74,9 @@ pub struct TrayState {
 enum Action {
     Start,
     Toggle(bool),
+    HoldStart,
+    HoldEnd,
+    PasteLast,
     Finish(Option<u64>),
     Cancel,
     Clear,
@@ -127,11 +135,13 @@ impl Sink for Capture {
 impl Sessions {
     pub fn new(mut model: PathBuf, config: PathBuf, history: Arc<crate::history::History>) -> Self {
         let state = Arc::new(Mutex::new(Snapshot {
+            shortcut: None,
             feedback: None,
             phase: "idle".into(),
             revision: 0,
             paste_failed: false,
             delivery_pending: false,
+            shortcut_paused: false,
             started_at: None,
             last_result: None,
             message: if model.is_file() {
@@ -168,6 +178,7 @@ impl Sessions {
                 let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
                 let mut warm = Arc::new(Mutex::new(None));
                 let mut delivery: Option<bool> = None;
+                let mut held = false;
                 loop {
                     let action = match rx.recv_timeout(Duration::from_secs(60)) {
                         Ok(action) => action,
@@ -186,9 +197,31 @@ impl Sessions {
                             index += 1;
                         }
                     }
+                    let hold_requested = matches!(action, Action::HoldStart);
                     let action = match action {
+                        Action::HoldStart => {
+                            let current = state.lock().unwrap();
+                            if current.shortcut_paused
+                                || matches!(
+                                    current.phase.as_str(),
+                                    "starting" | "recording" | "processing"
+                                )
+                            {
+                                continue;
+                            }
+                            delivery = Some(false);
+                            Action::Start
+                        }
+                        Action::HoldEnd if held => Action::Finish(None),
+                        Action::HoldEnd => continue,
                         Action::Toggle(terminal) => {
-                            let phase = state.lock().unwrap().phase.clone();
+                            let phase = {
+                                let state = state.lock().unwrap();
+                                if state.shortcut_paused {
+                                    continue;
+                                }
+                                state.phase.clone()
+                            };
                             match phase.as_str() {
                                 "recording" => Action::Finish(None),
                                 "starting" | "processing" => Action::Cancel,
@@ -199,6 +232,12 @@ impl Sessions {
                             }
                         }
                         Action::Start => {
+                            if matches!(
+                                state.lock().unwrap().phase.as_str(),
+                                "starting" | "recording" | "processing"
+                            ) {
+                                continue;
+                            }
                             delivery = None;
                             Action::Start
                         }
@@ -234,14 +273,17 @@ impl Sessions {
                             match opened {
                                 Ok(mic) => {
                                     let sink = Capture {
-                                        samples: Vec::with_capacity(MAX_SAMPLES),
+                                        samples: Vec::with_capacity(16_000 * 10),
                                         state: state.clone(),
                                         tx: tx.clone(),
                                         limit_sent: false,
                                         id,
                                     };
                                     match mic.start(sink) {
-                                        Ok(()) => recorder = Some(mic),
+                                        Ok(()) => {
+                                            recorder = Some(mic);
+                                            held = hold_requested;
+                                        }
                                         Err(e) => state
                                             .lock()
                                             .unwrap()
@@ -256,6 +298,7 @@ impl Sessions {
                                 continue;
                             }
                             let Some(mic) = recorder.take() else { continue };
+                            held = false;
                             let stopped = mic.stop();
                             drop(mic);
                             let samples = match stopped {
@@ -301,6 +344,7 @@ impl Sessions {
                             }));
                         }
                         Action::Cancel => {
+                            held = false;
                             generation.fetch_add(1, Ordering::SeqCst);
                             drop(recorder.take());
                             if state.lock().unwrap().phase == "processing" {
@@ -311,8 +355,32 @@ impl Sessions {
                                 .unwrap()
                                 .phase("idle", Some("Cancelled.".into()));
                         }
+                        Action::PasteLast => {
+                            let mut snapshot = state.lock().unwrap();
+                            if snapshot.delivery_pending
+                                || matches!(
+                                    snapshot.phase.as_str(),
+                                    "recording" | "starting" | "processing"
+                                )
+                            {
+                                continue;
+                            }
+                            let Some(text) = snapshot.last_result.as_ref().map(|r| r.text.clone())
+                            else {
+                                continue;
+                            };
+                            snapshot.delivery_pending = true;
+                            snapshot.paste_failed = false;
+                            let generation = generation.clone();
+                            let id = generation.load(Ordering::SeqCst);
+                            let tx = tx.clone();
+                            workers.push(thread::spawn(move || {
+                                let result = crate::output::deliver(&text, false, &generation, id);
+                                let _ = tx.send(Action::Delivered(id, result));
+                            }));
+                        }
                         Action::Clear => state.lock().unwrap().last_result = None,
-                        Action::Toggle(_) => unreachable!(),
+                        Action::Toggle(_) | Action::HoldStart | Action::HoldEnd => unreachable!(),
                         Action::SelectModel(path, candidate, reply) => {
                             let busy = matches!(
                                 state.lock().unwrap().phase.as_str(),
@@ -344,6 +412,7 @@ impl Sessions {
                         }
                         Action::Failed(id, error) => {
                             if id == generation.load(Ordering::SeqCst) {
+                                held = false;
                                 generation.fetch_add(1, Ordering::SeqCst);
                                 drop(recorder.take());
                                 state.lock().unwrap().phase("error", Some(error));
@@ -377,14 +446,12 @@ impl Sessions {
                                         let tx = tx.clone();
                                         let generation = generation.clone();
                                         workers.push(thread::spawn(move || {
-                                            let result = if generation.load(Ordering::SeqCst) != id
-                                            {
-                                                Err("Cancelled".into())
-                                            } else {
-                                                crate::output::copy(&text).and_then(|_| {
-                                                    crate::output::paste(terminal, &generation, id)
-                                                })
-                                            };
+                                            let result = crate::output::deliver(
+                                                &text,
+                                                terminal,
+                                                &generation,
+                                                id,
+                                            );
                                             let _ = tx.send(Action::Delivered(id, result));
                                         }));
                                     }
@@ -435,6 +502,28 @@ impl Sessions {
     pub fn toggle(&self, terminal: bool) {
         let _ = self.tx.send(Action::Toggle(terminal));
     }
+    pub fn paste_last(&self) {
+        let _ = self.tx.send(Action::PasteLast);
+    }
+    pub fn hold(&self, down: bool) {
+        let _ = self.tx.send(if down {
+            Action::HoldStart
+        } else {
+            Action::HoldEnd
+        });
+    }
+    pub fn toggle_shortcut_pause(&self) {
+        let mut state = self.state.lock().unwrap();
+        if !matches!(
+            state.phase.as_str(),
+            "starting" | "recording" | "processing"
+        ) {
+            state.shortcut_paused = !state.shortcut_paused;
+        }
+    }
+    pub fn shortcut_paused(&self) -> bool {
+        self.state.lock().unwrap().shortcut_paused
+    }
     pub fn overlay_input(&self) -> crate::overlay::Input {
         let state = self.state.lock().unwrap();
         crate::overlay::Input {
@@ -454,6 +543,8 @@ impl Sessions {
             let state = self.state.lock().unwrap();
             (
                 TrayState {
+                    shortcut_paused: state.shortcut_paused,
+                    delivery_pending: state.delivery_pending,
                     phase: state.phase.clone(),
                     can_copy: state
                         .last_result
@@ -468,8 +559,12 @@ impl Sessions {
         tray.model_available = std::path::Path::new(&model_path).is_file();
         tray
     }
-    pub fn model_available(&self) -> bool {
-        std::path::Path::new(&self.state.lock().unwrap().model_path).is_file()
+    pub fn needs_model_to_start(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        !matches!(
+            state.phase.as_str(),
+            "starting" | "recording" | "processing"
+        ) && !std::path::Path::new(&state.model_path).is_file()
     }
     pub fn cancel(&self) {
         let _ = self.tx.send(Action::Cancel);
@@ -508,9 +603,13 @@ impl Sessions {
 }
 
 #[tauri::command]
-pub fn session_snapshot(sessions: tauri::State<'_, Sessions>) -> Snapshot {
+pub fn session_snapshot(
+    sessions: tauri::State<'_, Sessions>,
+    shortcuts: tauri::State<'_, crate::shortcuts::Shortcuts>,
+) -> Snapshot {
     let mut state = sessions.state.lock().unwrap().clone();
     state.model_available = PathBuf::from(&state.model_path).is_file();
+    state.shortcut = Some(shortcuts.status(state.shortcut_paused));
     state
 }
 
@@ -543,6 +642,23 @@ mod tests {
     }
 
     #[test]
+    fn paused_shortcuts_and_unowned_releases_leave_the_session_alone() {
+        let sessions = Sessions::new(
+            "absent".into(),
+            PathBuf::new(),
+            Arc::new(crate::history::History::memory()),
+        );
+        sessions.toggle_shortcut_pause();
+        sessions.toggle(false);
+        sessions.hold(true);
+        sessions.hold(false);
+        drain(&sessions);
+        let current = sessions.state.lock().unwrap();
+        assert_eq!(current.phase, "idle");
+        assert_eq!(current.revision, 0);
+    }
+
+    #[test]
     fn tray_reports_missing_model_on_first_launch() {
         let sessions = Sessions::new(
             PathBuf::new(),
@@ -551,10 +667,15 @@ mod tests {
         );
         let tray = sessions.tray_state();
         assert!(!tray.can_copy);
+        assert!(sessions.needs_model_to_start());
         assert_eq!(
             crate::tray::presentation(&tray),
             ("Set up speech model", false)
         );
+        for phase in ["starting", "recording", "processing"] {
+            sessions.state.lock().unwrap().phase(phase, None);
+            assert!(!sessions.needs_model_to_start());
+        }
         sessions.shutdown();
     }
 

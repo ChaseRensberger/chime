@@ -1,7 +1,7 @@
 //! GTK surfaces only: no second WebKit process, and no audio-callback UI work.
 //! Like Hex, prefer layer-shell and use an input-transparent XWayland surface
 //! when the compositor does not implement that protocol.
-use super::{Frame, Kind, Position, Presentation};
+use super::{Frame, Position, Presentation};
 use gtk::{cairo, gdk, glib, prelude::*};
 use std::{cell::RefCell, rc::Rc, sync::OnceLock, time::Duration};
 
@@ -233,12 +233,7 @@ fn draw(context: &cairo::Context, frame: Option<&Frame>) {
     context.set_source_rgb(1.0, 90.0 / 255.0, 31.0 / 255.0);
     context.set_line_width(3.0);
     context.set_line_cap(cairo::LineCap::Round);
-    for (i, base) in [5.0, 11.0, 19.0, 11.0, 5.0].iter().enumerate() {
-        let height = if frame.kind == Kind::Listening {
-            base * (0.4 + frame.level as f64 * 0.9)
-        } else {
-            *base
-        };
+    for (i, height) in frame.heights.into_iter().enumerate() {
         let x = 21.0 + i as f64 * 6.0;
         context.move_to(x, 24.0 - height / 2.0);
         context.line_to(x, 24.0 + height / 2.0);
@@ -273,6 +268,7 @@ pub fn install(app: &tauri::AppHandle) -> Result<&'static str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overlay::Kind;
     use std::time::Instant;
     #[test]
     fn library_survives_unsupported_probe_and_missing_symbols() {
@@ -347,11 +343,7 @@ mod tests {
             let context = cairo::Context::new(&image).unwrap();
             draw(
                 &context,
-                Some(&Frame {
-                    kind: Kind::Listening,
-                    label: "Listening",
-                    level: 0.6,
-                }),
+                Some(&Frame::new(Kind::Listening, "Listening", 0.6, 0.0)),
             );
             gdk::pixbuf_get_from_surface(&image, 0, 0, WIDTH, HEIGHT)
                 .unwrap()
@@ -369,11 +361,12 @@ mod tests {
             }
             surface.update(
                 Position::Bottom,
-                Some(Frame {
-                    kind: Kind::Listening,
-                    label: "Listening · preview",
-                    level: (start.elapsed().as_secs_f32() * 5.0).sin().abs(),
-                }),
+                Some(Frame::new(
+                    Kind::Listening,
+                    "Listening · preview",
+                    0.6,
+                    start.elapsed().as_secs_f64(),
+                )),
             );
             assert!(
                 !surface.window.is_active(),

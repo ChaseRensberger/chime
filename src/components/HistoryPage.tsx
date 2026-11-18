@@ -28,9 +28,35 @@ export function HistoryPage({
   const [refresh, setRefresh] = useState(0);
   const [pending, setPending] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [deleting, setDeleting] = useState<{ id: number; text: string } | null>(null);
+  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const [pruning, setPruning] = useState<{ retention: Retention; count: number } | null>(null);
   const [notice, setNotice] = useState("");
   const search = useRef<HTMLInputElement>(null);
   const detail = listing?.entries.find((entry) => entry.id === selected) ?? listing?.entries[0];
+
+  useEffect(() => {
+    if (deleting || pruning) deleteDialog.current?.showModal();
+  }, [deleting, pruning]);
+
+  async function applyRetention(retention: Retention, confirmed = 0) {
+    setPending(true);
+    try {
+      const count = await source.setRetention(retention, confirmed);
+      if (count) {
+        setPruning({ retention, count });
+        return;
+      }
+      deleteDialog.current?.close();
+      setNotice("Retention updated.");
+      setRefresh((n) => n + 1);
+    } catch (error) {
+      deleteDialog.current?.close();
+      setNotice(String(error));
+    } finally {
+      setPending(false);
+    }
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -88,12 +114,7 @@ export function HistoryPage({
             className="w-auto"
             value={listing?.retention ?? "week"}
             disabled={!listing || pending}
-            onChange={(event) =>
-              void change(
-                () => source.setRetention(event.target.value as Retention),
-                "Retention updated.",
-              )
-            }
+            onChange={(event) => void applyRetention(event.target.value as Retention)}
           >
             {labels.map(([value, label]) => (
               <option value={value} key={value}>
@@ -223,10 +244,7 @@ export function HistoryPage({
                     size="icon-sm"
                     aria-label="Delete transcript"
                     disabled={pending}
-                    onClick={() => {
-                      void change(() => source.remove(detail.id), "Transcript deleted.");
-                      search.current?.focus();
-                    }}
+                    onClick={() => setDeleting({ id: detail.id, text: detail.text })}
                   >
                     <Trash aria-hidden="true" />
                   </Button>
@@ -246,6 +264,53 @@ export function HistoryPage({
       <p role="status" className="supporting min-h-5">
         {notice}
       </p>
+      <dialog
+        ref={deleteDialog}
+        aria-labelledby="delete-title"
+        aria-describedby="delete-warning"
+        className="m-auto w-[min(24rem,90vw)] rounded-sm border bg-background p-5 text-foreground backdrop:bg-black/40"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.stopPropagation();
+        }}
+        onClose={() => {
+          setDeleting(null);
+          setPruning(null);
+        }}
+      >
+        <h2 id="delete-title" className="font-semibold">
+          {pruning
+            ? `Delete ${pruning.count} older transcript${pruning.count === 1 ? "" : "s"}?`
+            : "Delete this transcript?"}
+        </h2>
+        <p id="delete-warning" className="supporting my-3">
+          {pruning
+            ? `Keeping ${labels.find(([value]) => value === pruning.retention)?.[1]} of history removes these entries. This can’t be undone.`
+            : "This removes it from History. This can’t be undone."}
+        </p>
+        <blockquote className="line-clamp-2 break-words text-sm">{deleting?.text}</blockquote>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" autoFocus onClick={() => deleteDialog.current?.close()}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={(!deleting && !pruning) || pending}
+            onClick={() => {
+              if (pruning) {
+                void applyRetention(pruning.retention, pruning.count);
+                return;
+              }
+              if (!deleting) return;
+              const { id } = deleting;
+              deleteDialog.current?.close();
+              void change(() => source.remove(id), "Transcript deleted.");
+              search.current?.focus();
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      </dialog>
     </main>
   );
 }

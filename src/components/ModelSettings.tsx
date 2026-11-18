@@ -60,6 +60,7 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
 
   const progress = snapshot?.progress;
   const working = pending || !!progress?.busy;
+  const target = snapshot?.entries.find((entry) => entry.id === progress?.modelId);
   return (
     <div className="flex flex-col gap-4">
       <p className="supporting">
@@ -80,20 +81,26 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
             <p className="break-words text-sm">{model.name}</p>
             <p className="supporting">
               {megabytes(model.size)}
-              {model.recommended ? " · English · Recommended" : " · Local file"}
+              {" · "}
+              {model.languages ?? "Local file"}
+              {model.recommended ? " · Recommended" : ""}
               {model.active ? " · Selected" : model.installed ? " · Installed" : ""}
             </p>
           </div>
           <Button
             variant={model.installed ? "outline" : "default"}
-            disabled={busy || working || model.active}
-            onClick={() => void run(model.installed ? "use" : "download", model.id)}
+            disabled={busy || working || (model.active && !model.languages)}
+            onClick={() =>
+              void run(model.installed && !model.active ? "use" : "download", model.id)
+            }
           >
             {model.active
-              ? "Selected"
+              ? model.languages
+                ? "Verify / repair"
+                : "Selected"
               : model.installed
                 ? "Use"
-                : snapshot.partialSize > 0
+                : model.partialSize > 0
                   ? "Resume download"
                   : "Download"}
           </Button>
@@ -104,6 +111,7 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
           <div className="flex items-center justify-between gap-3">
             <p role="status" className="supporting">
               {stages[progress.stage] ?? "Preparing"}
+              {target ? ` · ${target.name}` : ""}
             </p>
             <Button
               variant="ghost"
@@ -138,9 +146,13 @@ export function ModelSettings({ source, busy }: { source: ModelService; busy: bo
         <Button variant="outline" disabled={busy || working} onClick={() => void run("import")}>
           Import model…
         </Button>
-        {progress?.error && snapshot?.entries[0]?.installed && (
-          <Button variant="ghost" disabled={busy || working} onClick={() => void run("download")}>
-            Check / download recommended model
+        {progress?.error && target?.languages && target.installed && (
+          <Button
+            variant="ghost"
+            disabled={busy || working}
+            onClick={() => void run("download", target.id)}
+          >
+            Check / download {target.name}
           </Button>
         )}
       </div>

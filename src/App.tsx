@@ -109,7 +109,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
   return (
     <div className="app-shell">
       <header className="flex items-center justify-between gap-3 border-b px-4 py-4 sm:px-8">
-        <span className="text-lg font-semibold tracking-tight">chime</span>
+        <span className="text-lg font-semibold tracking-tight">Chime</span>
         <nav ref={nav} aria-label="Main navigation" className="flex items-center gap-1">
           {(
             [
@@ -143,6 +143,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
           modelPath={state.modelPath}
           modelLoaded={state.modelLoaded}
           shortcutCommand={state.shortcutCommand}
+          shortcut={state.shortcut}
           busy={busy}
           models={engine.models}
           onOutcomeChange={(next) => {
@@ -190,7 +191,7 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                   disabled={
                     state.phase === "starting" ||
                     state.phase === "processing" ||
-                    (!demo && state.modelAvailable === false)
+                    (!demo && state.phase !== "recording" && state.modelAvailable === false)
                   }
                   aria-busy={state.phase === "processing"}
                   onClick={() => (state.phase === "recording" ? engine.finish() : engine.start())}
@@ -220,9 +221,13 @@ export function App({ engine, history }: { engine: DictationEngine; history: His
                   </Button>
                 )}
               </div>
-              {!demo && (
+              {!demo && state.shortcut?.label && (
                 <div className="text-xs text-muted-foreground">
-                  <ShortcutHint />
+                  {state.shortcut.paused ? (
+                    "Shortcut paused"
+                  ) : (
+                    <ShortcutHint label={state.shortcut.label} />
+                  )}
                 </div>
               )}
               {!demo && state.modelAvailable === false && (

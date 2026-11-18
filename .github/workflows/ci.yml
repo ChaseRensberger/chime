@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      test_tag:
+        description: Version for the local test artifact
+        default: v0.0.1
+        required: true
 
 permissions:
   contents: read
@@ -17,12 +22,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14]
+        os: [ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+      - name: Stamp test artifact version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TEST_TAG: ${{ inputs.test_tag }}
+        run: bun run release:prepare "$TEST_TAG"
       - run: bun run check
       - run: bun run test
-      - run: bun run build -- --locked
+      - run: bunx tauri build --no-bundle -- --locked
+      - name: Package Apple silicon test build
+        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch'
+        run: |
+          test "$(uname -m)" = arm64
+          bunx tauri bundle --bundles dmg
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch'
+        with:
+          name: Chime-macOS-arm64-test
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

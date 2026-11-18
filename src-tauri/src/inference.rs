@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MAX_SAMPLES: usize = 16_000 * 60;
+use chime_engine::MAX_CHUNK_SAMPLES;
 const MAX_RESPONSE: u64 = 64 * 1024;
 const DEADLINE: Duration = Duration::from_secs(180);
 
@@ -156,7 +156,27 @@ pub fn infer(
         if worker.is_none() {
             *worker = Some(Worker::prepare(model, generation, id)?);
         }
-        worker.as_mut().unwrap().run(samples, generation, id)
+        let worker = worker.as_mut().unwrap();
+        let mut remaining = samples.as_slice();
+        let mut transcript = String::new();
+        while !remaining.is_empty() {
+            if generation.load(Ordering::SeqCst) != id {
+                return Err("Cancelled".into());
+            }
+            let chunk = chime_engine::next_chunk(remaining);
+            remaining = &remaining[chunk.len()..];
+            if chunk.iter().all(|v| v.abs() < 0.0001) {
+                continue;
+            }
+            let text = worker.run(chunk.to_vec(), generation, id)?;
+            if !text.trim().is_empty() {
+                if !transcript.is_empty() {
+                    transcript.push(' ');
+                }
+                transcript.push_str(text.trim());
+            }
+        }
+        Ok(transcript)
     })();
     if result.is_err() {
         *worker = None;
@@ -189,7 +209,7 @@ pub fn worker(model: PathBuf) {
             return;
         }
         let size = u32::from_le_bytes(size) as usize;
-        if size == 0 || size > MAX_SAMPLES {
+        if size == 0 || size > MAX_CHUNK_SAMPLES {
             let _ = respond(&mut output, Err("Invalid PCM size".into()));
             return;
         }

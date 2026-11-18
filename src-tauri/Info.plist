@@ -3,4 +3,6 @@
 <plist version="1.0"><dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Chime uses your microphone to transcribe speech locally on your Mac.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Chime uses System Events to paste your dictation into the active app.</string>
 </dict></plist>

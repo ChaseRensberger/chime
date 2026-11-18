@@ -29,21 +29,22 @@ jobs:
       - run: bun run test
       - name: Include the recording overlay runtime
         run: bun scripts/prepare-linux-bundle.ts
-      - name: Build and upload Linux packages
-        uses: tauri-apps/tauri-action@v1
+      - name: Build and verify Linux packages
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tauriScript: bunx tauri
-          args: --config src-tauri/target/overlay-bundle.json --bundles deb,appimage -- --locked
-          tagName: ${{ github.ref_name }}
-          releaseName: Chime ${{ github.ref_name }}
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generateReleaseNotes: true
-          releaseBody: |
-            Linux x86_64 packages (AVX2-capable CPU required). Wayland clipboard and paste require wl-clipboard and wtype, plus compositor support for virtual keyboards. The Debian package installs these helpers; AppImage users must install them separately.
-
-            In Settings → Speech model, download the recommended Parakeet Unified English model or import a compatible local GGUF file. The model is not bundled with the app.
-
-            macOS releases are not included yet.
+          TAG: ${{ github.ref_name }}
+        run: |
+          bunx tauri build --config src-tauri/target/overlay-bundle.json --bundles deb,appimage -- --locked
+          bash scripts/debian-version.sh src-tauri/target/release/bundle/deb/*.deb "$TAG"
+      - name: Upload verified packages to draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            flags=()
+            [[ "$TAG" != *-* ]] || flags+=(--prerelease)
+            gh release create "$TAG" --verify-tag --draft --title "Chime $TAG" --generate-notes \
+              --notes "Linux x86_64 (AVX2). Wayland clipboard and paste require wl-clipboard and wtype. Download a speech model in Settings after installation." "${flags[@]}"
+          fi
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage --clobber

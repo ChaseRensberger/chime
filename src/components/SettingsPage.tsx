@@ -3,8 +3,9 @@ import { Button } from "#components/core/button";
 import { NativeSelect } from "#components/core/native-select";
 import type { Appearance, Settings } from "../lib/settings";
 import { ShortcutHint } from "./ShortcutHint";
-import type { DemoOutcome } from "../engine/types";
-import { useEffect, useRef } from "react";
+import type { DemoOutcome, EngineSnapshot } from "../engine/types";
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ModelSettings } from "./ModelSettings";
 import type { ModelService } from "../engine/models";
 import { FeedbackSettings } from "./FeedbackSettings";
@@ -19,6 +20,7 @@ export function SettingsPage({
   modelPath,
   modelLoaded,
   shortcutCommand,
+  shortcut,
   busy,
   models,
 }: {
@@ -30,10 +32,20 @@ export function SettingsPage({
   modelPath?: string;
   modelLoaded?: boolean;
   shortcutCommand?: string;
+  shortcut?: EngineSnapshot["shortcut"];
   busy: boolean;
   models?: ModelService;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const [shortcutError, setShortcutError] = useState("");
+  async function changeShortcut(command: string, args?: Record<string, unknown>) {
+    setShortcutError("");
+    try {
+      await invoke(command, args);
+    } catch (error) {
+      setShortcutError(String(error));
+    }
+  }
   useEffect(() => {
     heading.current?.focus();
   }, []);
@@ -69,17 +81,65 @@ export function SettingsPage({
           {!demo && (
             <div className="flex flex-col gap-2">
               <p>Shortcut</p>
-              <ShortcutHint />
-              <p className="supporting">
-                Assign this command to a shortcut in your desktop’s keyboard settings. Press once to
-                start recording and again to finish.
-              </p>
-              <code className="select-text break-all rounded-sm border p-2 text-xs">
-                {shortcutCommand}
-              </code>
+              {shortcut?.label && <ShortcutHint label={shortcut.label} />}
+              {shortcut?.paused && (
+                <p className="supporting">Shortcut paused. Resume it from the tray menu.</p>
+              )}
+              {shortcut && shortcut.backend !== "manual" && (
+                <>
+                  {(!shortcut.label || shortcut.backend === "portal") && (
+                    <Button
+                      variant="outline"
+                      disabled={shortcut.configuring}
+                      onClick={() => void changeShortcut("shortcut_configure")}
+                    >
+                      {shortcut.configuring
+                        ? "Waiting for shortcut…"
+                        : shortcut.label
+                          ? "Change shortcut…"
+                          : shortcut.backend === "native"
+                            ? "Enable Control + Option + Space"
+                            : "Set up shortcut…"}
+                    </Button>
+                  )}
+                  {shortcut.label && (
+                    <label className="flex flex-col gap-2">
+                      Recording mode
+                      <NativeSelect
+                        disabled={busy}
+                        value={shortcut.mode}
+                        onChange={(e) =>
+                          void changeShortcut("shortcut_mode", { mode: e.target.value })
+                        }
+                      >
+                        <option value="toggle">Press to start and stop</option>
+                        <option value="hold">Hold to talk</option>
+                      </NativeSelect>
+                    </label>
+                  )}
+                </>
+              )}
+              {(!shortcut ||
+                shortcut.backend === "manual" ||
+                (shortcut.backend === "portal" && !shortcut.label)) && (
+                <>
+                  <p className="supporting">
+                    Assign this command in your desktop’s keyboard settings. Press once to start
+                    recording and again to finish.
+                  </p>
+                  <code className="select-text break-all rounded-sm border p-2 text-xs">
+                    {shortcutCommand}
+                  </code>
+                </>
+              )}
+              {(shortcutError || shortcut?.error) && (
+                <p role="alert" className="supporting text-destructive">
+                  {shortcutError || shortcut?.error}
+                </p>
+              )}
               <p className="supporting">
                 Records without switching away from your app. Automatic paste depends on your
-                desktop’s input support. Pressing the shortcut during transcription cancels it.
+                desktop’s input support. Record for up to 15 minutes.
               </p>
             </div>
           )}

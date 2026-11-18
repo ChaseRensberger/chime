@@ -57,9 +57,35 @@ pub enum Kind {
 
 #[derive(Clone, Debug)]
 pub struct Frame {
-    pub kind: Kind,
     pub label: &'static str,
-    pub level: f32,
+    pub heights: [f64; 5],
+}
+
+impl Frame {
+    fn new(kind: Kind, label: &'static str, level: f32, seconds: f64) -> Self {
+        let strength = if level.is_finite() {
+            (level.clamp(0.0, 1.0) as f64).sqrt()
+        } else {
+            0.0
+        };
+        let heights = std::array::from_fn(|i| {
+            let base = [6.0, 13.0, 21.0, 13.0, 6.0][i];
+            match kind {
+                Kind::Listening => {
+                    3.0 + strength
+                        * (base + 6.0)
+                        * (0.35
+                            + 0.65
+                                * (seconds * (3.8 + i as f64 * 0.16) + i as f64 * 1.3)
+                                    .sin()
+                                    .abs())
+                }
+                Kind::Processing => 4.0 + 8.0 * (seconds * 3.3 - i as f64 * 0.7).cos().max(0.0),
+                _ => base,
+            }
+        });
+        Self { label, heights }
+    }
 }
 
 /// Transient results have a deadline, not a delayed hide callback that can hide a newer recording.
@@ -67,6 +93,7 @@ pub struct Frame {
 pub struct Presentation {
     previous: Option<(u64, String, bool, bool, Option<String>)>,
     notice_until: Option<Instant>,
+    since: Option<Instant>,
 }
 
 impl Presentation {
@@ -79,6 +106,7 @@ impl Presentation {
             input.message.clone(),
         );
         if self.previous.as_ref() != Some(&key) {
+            self.since = Some(now);
             // Do not display a leftover result on launch.
             self.notice_until = self.previous.as_ref().and_then(|_| {
                 matches!(input.phase.as_str(), "idle" | "complete" | "error").then_some(
@@ -105,15 +133,13 @@ impl Presentation {
             }
             _ => return None,
         };
-        Some(Frame {
+        Some(Frame::new(
             kind,
             label,
-            level: if input.level.is_finite() {
-                input.level.clamp(0.0, 1.0)
-            } else {
-                0.0
-            },
-        })
+            input.level,
+            now.saturating_duration_since(self.since.unwrap_or(now))
+                .as_secs_f64(),
+        ))
     }
 }
 
@@ -176,12 +202,15 @@ fn current_frame(
     {
         *preview = None;
     }
-    if preview.is_some_and(|until| now < until) {
-        frame = Some(Frame {
-            kind: Kind::Listening,
-            label: "Listening · preview",
-            level: 0.5,
-        });
+    if let Some(until) = preview.filter(|until| now < *until) {
+        let seconds = 3.0 - (until - now).as_secs_f64();
+        let level = (0.18 + 0.55 * (seconds * 3.5).sin().abs()) as f32;
+        frame = Some(Frame::new(
+            Kind::Listening,
+            "Listening · preview",
+            level,
+            seconds,
+        ));
     }
     (position, frame)
 }
@@ -224,6 +253,13 @@ pub fn overlay_preview(overlay: tauri::State<'_, Overlay>) -> Result<(), String>
 mod tests {
     use super::*;
     #[test]
+    fn waveform_moves_on_sustained_voice_but_rests_in_silence() {
+        let heights = |level, t| Frame::new(Kind::Listening, "Listening", level, t).heights;
+        assert_ne!(heights(0.4, 0.0), heights(0.4, 0.1));
+        assert_eq!(heights(0.0, 0.0), heights(0.0, 0.1));
+        assert_eq!(heights(f32::NAN, 1.0), [3.0; 5]);
+    }
+    #[test]
     fn a_new_recording_replaces_results_and_their_deadlines() {
         let now = Instant::now();
         let mut view = Presentation::default();
@@ -233,20 +269,23 @@ mod tests {
         };
         assert!(view.update(&input, now).is_none());
         input.phase = "recording".into();
-        assert_eq!(view.update(&input, now).unwrap().kind, Kind::Listening);
+        assert_eq!(view.update(&input, now).unwrap().label, "Listening");
         input.phase = "complete".into();
         input.delivery_pending = true;
         assert_eq!(view.update(&input, now).unwrap().label, "Pasting");
         input.delivery_pending = false;
         input.paste_failed = true;
-        assert_eq!(view.update(&input, now).unwrap().kind, Kind::Error);
+        assert_eq!(
+            view.update(&input, now).unwrap().label,
+            "Paste failed · open Chime"
+        );
         input.phase = "recording".into();
         input.paste_failed = false;
         assert_eq!(
             view.update(&input, now + Duration::from_secs(6))
                 .unwrap()
-                .kind,
-            Kind::Listening
+                .label,
+            "Listening"
         );
         input.phase = "idle".into();
         input.message = Some("Cancelled.".into());

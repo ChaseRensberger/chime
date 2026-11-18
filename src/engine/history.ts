@@ -19,7 +19,7 @@ export interface HistorySource {
   list(query: string): Promise<HistoryListing>;
   remove(id: number): Promise<void>;
   clear(): Promise<void>;
-  setRetention(retention: Retention): Promise<void>;
+  setRetention(retention: Retention, confirmed?: number): Promise<number>;
   copy(id: number): Promise<void>;
   dispose(): void;
 }
@@ -30,7 +30,8 @@ export function createHistory(engine: DictationEngine): HistorySource {
       list: (query) => invoke("history_list", { query }),
       remove: (id) => invoke("history_update", { action: "delete", id }),
       clear: () => invoke("history_update", { action: "clear" }),
-      setRetention: (retention) => invoke("history_update", { action: "retention", retention }),
+      setRetention: (retention, confirmed = 0) =>
+        invoke("history_update", { action: "retention", retention, confirmed }),
       copy: (id) => invoke("history_copy", { id }),
       dispose() {},
     };
@@ -73,9 +74,14 @@ export function createHistory(engine: DictationEngine): HistorySource {
     async clear() {
       entries = [];
     },
-    async setRetention(value) {
+    async setRetention(value, confirmed = 0) {
+      const days = { off: 0, day: 1, week: 7, month: 30, forever: 0 }[value];
+      const cutoff = Date.now() - days * 86400000;
+      const count = days ? entries.filter((entry) => entry.timestampMs < cutoff).length : 0;
+      if (count > confirmed) return count;
       retention = value;
-      prune();
+      if (days) entries = entries.filter((entry) => entry.timestampMs >= cutoff);
+      return 0;
     },
     async copy(id) {
       const entry = entries.find((entry) => entry.id === id);

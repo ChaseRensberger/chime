@@ -22,6 +22,34 @@ const SIZE: u64 = 731_357_568;
 const SHA256: &str = "4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795";
 const URL: &str = "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/843b1b175ace04f5a89d379c79e2518c0d065b25/parakeet-unified-en-0.6b-Q8_0.gguf";
 
+struct Artifact {
+    id: &'static str,
+    name: &'static str,
+    file: &'static str,
+    size: u64,
+    digest: &'static str,
+    url: &'static str,
+    languages: &'static str,
+}
+
+const CATALOG: &[Artifact] = &[
+    Artifact { id: ID, name: NAME, file: FILE, size: SIZE, digest: SHA256, url: URL, languages: "English" },
+    Artifact {
+        id: "parakeet-v3", name: "Parakeet v3", file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
+        size: 739_508_576, digest: "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7",
+        url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/85ac09ea12fc4b1112fa76810059364bc6adc9de/parakeet-tdt-0.6b-v3-Q8_0.gguf", languages: "25 European languages",
+    },
+    Artifact {
+        id: "whisper-large-v3-turbo", name: "Whisper large-v3-turbo", file: "whisper-large-v3-turbo-Q8_0.gguf",
+        size: 886_381_824, digest: "d5e65f2b0828802ae2c231673d31982cebe3a778c95d9494a9f3efee6bd17448",
+        url: "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/d222c9f621c1128299248f2ded4d8a1820519780/whisper-large-v3-turbo-Q8_0.gguf", languages: "Multilingual",
+    },
+];
+
+fn artifact(id: &str) -> Option<&'static Artifact> {
+    CATALOG.iter().find(|model| model.id == id)
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
@@ -31,11 +59,14 @@ pub struct Entry {
     installed: bool,
     active: bool,
     recommended: bool,
+    languages: Option<&'static str>,
+    partial_size: u64,
 }
 
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
+    model_id: Option<String>,
     busy: bool,
     stage: String,
     downloaded: u64,
@@ -48,7 +79,6 @@ pub struct Progress {
 pub struct Snapshot {
     entries: Vec<Entry>,
     progress: Progress,
-    partial_size: u64,
 }
 
 pub struct Models {
@@ -95,15 +125,26 @@ impl Models {
     }
 
     fn snapshot(&self, selected: &Path) -> Result<Snapshot, String> {
-        let downloaded = self.directory.join(FILE);
-        let mut entries = vec![Entry {
-            id: ID.into(),
-            name: NAME.into(),
-            size: SIZE,
-            installed: downloaded.is_file(),
-            active: selected == downloaded && downloaded.is_file(),
-            recommended: true,
-        }];
+        let mut entries: Vec<_> = CATALOG
+            .iter()
+            .map(|model| {
+                let downloaded = self.directory.join(model.file);
+                Entry {
+                    id: model.id.into(),
+                    name: model.name.into(),
+                    size: model.size,
+                    installed: downloaded.is_file(),
+                    active: selected == downloaded && downloaded.is_file(),
+                    recommended: model.id == ID,
+                    languages: Some(model.languages),
+                    partial_size: fs::metadata(
+                        self.directory.join(format!("{}.partial", model.file)),
+                    )
+                    .map(|m| m.len())
+                    .unwrap_or(0),
+                }
+            })
+            .collect();
         let imported = self.directory.join("imports");
         if imported.is_dir() {
             for item in fs::read_dir(&imported).map_err(|e| e.to_string())? {
@@ -123,11 +164,13 @@ impl Models {
                         installed: true,
                         active: selected == path,
                         recommended: false,
+                        languages: None,
+                        partial_size: 0,
                     });
                 }
             }
         }
-        entries[1..].sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        entries[CATALOG.len()..].sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
         // Preserve the pre-manager file selection without moving or deleting it.
         if selected.is_file() && !entries.iter().any(|entry| entry.active) {
             entries.push(Entry {
@@ -141,20 +184,19 @@ impl Models {
                 installed: true,
                 active: true,
                 recommended: false,
+                languages: None,
+                partial_size: 0,
             });
         }
         Ok(Snapshot {
             entries,
             progress: self.progress.lock().unwrap().clone(),
-            partial_size: fs::metadata(self.directory.join(format!("{FILE}.partial")))
-                .map(|m| m.len())
-                .unwrap_or(0),
         })
     }
 
     fn path_for(&self, id: &str, selected: &Path) -> Result<PathBuf, String> {
-        if id == ID {
-            return Ok(self.directory.join(FILE));
+        if let Some(model) = artifact(id) {
+            return Ok(self.directory.join(model.file));
         }
         if id == "existing" {
             return Ok(selected.to_owned());
@@ -265,31 +307,31 @@ impl Models {
         result
     }
 
-    fn download(&self, id: u64) -> Result<PathBuf, String> {
+    fn download(&self, id: u64, model: &Artifact) -> Result<PathBuf, String> {
         fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
-        let path = self.directory.join(FILE);
+        let path = self.directory.join(model.file);
         if path.is_file() {
-            self.stage("verifying", 0, SIZE);
-            if verify(&path, SIZE, SHA256, || self.check(id)).is_ok() {
+            self.stage("verifying", 0, model.size);
+            if verify(&path, model.size, model.digest, || self.check(id)).is_ok() {
                 return Ok(path);
             }
             self.check(id)?;
         }
-        let partial = self.directory.join(format!("{FILE}.partial"));
+        let partial = self.directory.join(format!("{}.partial", model.file));
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| e.to_string())?;
         runtime.block_on(async {
             tokio::select! {
-                result = transfer(URL, &partial, SIZE, |bytes| self.stage("downloading", bytes, SIZE)) => result,
+                result = transfer(model.url, &partial, model.size, |bytes| self.stage("downloading", bytes, model.size)) => result,
                 _ = async {
                     while self.check(id).is_ok() { tokio::time::sleep(Duration::from_millis(100)).await; }
                 } => self.check(id),
             }
         })?;
-        self.stage("verifying", SIZE, SIZE);
-        if let Err(error) = verify(&partial, SIZE, SHA256, || self.check(id)) {
+        self.stage("verifying", model.size, model.size);
+        if let Err(error) = verify(&partial, model.size, model.digest, || self.check(id)) {
             // Cancellation keeps a complete partial; corrupt bytes must be fetched again.
             if self.check(id).is_ok() {
                 let _ = fs::remove_file(&partial);
@@ -347,12 +389,12 @@ mod tests {
         )
         .unwrap();
         let id = manager.begin().unwrap();
-        let path = manager.download(id).unwrap();
+        let path = manager.download(id, &CATALOG[0]).unwrap();
         assert!(!partial.exists());
         verify(&path, SIZE, SHA256, || Ok(())).unwrap();
         chime_engine::LocalTranscriber::load(&path).expect("the pinned catalog model must load");
         // A second preparation uses the completed local file.
-        assert_eq!(manager.download(id).unwrap(), path);
+        assert_eq!(manager.download(id, &CATALOG[0]).unwrap(), path);
     }
 
     fn server(response: &'static str) -> (String, thread::JoinHandle<String>) {
@@ -451,8 +493,8 @@ mod tests {
         let external = temp.0.join("external.gguf");
         fs::write(&external, b"GGUF").unwrap();
         let snapshot = manager.snapshot(&external).unwrap();
-        assert_eq!(snapshot.entries.len(), 2);
-        assert!(snapshot.entries[1].active);
+        assert_eq!(snapshot.entries.len(), CATALOG.len() + 1);
+        assert!(snapshot.entries.last().unwrap().active);
         assert!(manager
             .path_for("import:../../outside.gguf", &external)
             .is_err());
@@ -697,11 +739,17 @@ pub fn models_start(
     }
     let models = app.state::<Arc<Models>>().inner().clone();
     let id = models.begin()?;
+    models.progress.lock().unwrap().model_id = if action == "download" {
+        Some(model_id.as_deref().unwrap_or(ID).to_string())
+    } else {
+        model_id.clone()
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let result = match action.as_str() {
             "import" => models.import(&app, id),
-            "download" => models
-                .download(id)
+            "download" => artifact(model_id.as_deref().unwrap_or(ID))
+                .ok_or_else(|| "Unknown downloadable model.".to_string())
+                .and_then(|model| models.download(id, model))
                 .and_then(|path| models.activate(&app, path, id)),
             _ => models
                 .path_for(
@@ -709,9 +757,9 @@ pub fn models_start(
                     &app.state::<crate::session::Sessions>().model_path(),
                 )
                 .and_then(|path| {
-                    if model_id.as_deref() == Some(ID) {
-                        models.stage("verifying", 0, SIZE);
-                        verify(&path, SIZE, SHA256, || models.check(id))?;
+                    if let Some(model) = model_id.as_deref().and_then(artifact) {
+                        models.stage("verifying", 0, model.size);
+                        verify(&path, model.size, model.digest, || models.check(id))?;
                     }
                     models.activate(&app, path, id)
                 }),

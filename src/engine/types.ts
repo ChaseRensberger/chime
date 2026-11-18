@@ -18,6 +18,14 @@ export interface EngineSnapshot {
   modelLoaded?: boolean;
   modelAvailable?: boolean;
   shortcutCommand?: string;
+  shortcut?: {
+    backend: "manual" | "portal" | "native";
+    label: string | null;
+    error: string | null;
+    paused: boolean;
+    mode: "toggle" | "hold";
+    configuring: boolean;
+  };
 }
 
 export interface DictationEngine {

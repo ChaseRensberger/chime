@@ -8,6 +8,7 @@ mod models;
 mod output;
 mod overlay;
 mod session;
+mod shortcuts;
 mod tray;
 use tauri::Manager;
 
@@ -31,7 +32,10 @@ fn dispatch(app: &tauri::AppHandle, args: &[String]) {
         .iter()
         .any(|a| a == "--toggle" || a == "--toggle-terminal")
     {
-        if sessions.model_available() {
+        if sessions.shortcut_paused() {
+            return;
+        }
+        if !sessions.needs_model_to_start() {
             sessions.toggle(args.iter().any(|a| a == "--toggle-terminal"));
         } else {
             show_window(app);
@@ -75,6 +79,7 @@ fn main() {
                 app.path().app_data_dir()?.join("history.json"),
             ));
             app.manage(session::Sessions::new(model, config, history.clone()));
+            shortcuts::setup(app)?;
             let feedback =
                 feedback::Feedback::new(app.path().app_config_dir()?.join("feedback.json"));
             app.state::<session::Sessions>()
@@ -91,13 +96,18 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && window.hide().is_ok() {
+                if window.label() == "main"
+                    && tray::available(window.app_handle())
+                    && window.hide().is_ok()
+                {
                     api.prevent_close();
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
             session::session_snapshot,
+            shortcuts::shortcut_configure,
+            shortcuts::shortcut_mode,
             feedback::feedback_preferences,
             feedback::feedback_save,
             feedback::feedback_preview,

@@ -1,5 +1,5 @@
 //! A nonactivating NSPanel, visible across Spaces without becoming the key window.
-use super::{Frame, Kind, Position, Presentation};
+use super::{Frame, Position, Presentation};
 use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSBackingStoreType, NSBox, NSBoxType, NSColor, NSEvent, NSFont, NSPanel, NSScreen,
@@ -105,7 +105,9 @@ impl Surface {
         let frame = match frame.filter(|_| position != Position::Hidden) {
             Some(frame) => frame,
             None => {
-                self.panel.orderOut(None);
+                if self.panel.isVisible() {
+                    self.panel.orderOut(None);
+                }
                 return;
             }
         };
@@ -137,17 +139,7 @@ impl Surface {
             self.position = position;
         }
         self.label.setStringValue(&NSString::from_str(frame.label));
-        for (i, (bar, base)) in self
-            .bars
-            .iter()
-            .zip([5.0, 11.0, 19.0, 11.0, 5.0])
-            .enumerate()
-        {
-            let height = if frame.kind == Kind::Listening {
-                base * (0.4 + frame.level as f64 * 0.9)
-            } else {
-                base
-            };
+        for (i, (bar, height)) in self.bars.iter().zip(frame.heights).enumerate() {
             bar.setFrame(rect(
                 19.5 + i as f64 * 6.0,
                 (HEIGHT - height) / 2.0,
@@ -155,7 +147,9 @@ impl Surface {
                 height,
             ));
         }
-        self.panel.orderFrontRegardless();
+        if !self.panel.isVisible() {
+            self.panel.orderFrontRegardless();
+        }
     }
 }
 

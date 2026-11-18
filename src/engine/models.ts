@@ -7,12 +7,14 @@ export interface ModelEntry {
   installed: boolean;
   active: boolean;
   recommended: boolean;
+  languages: string | null;
+  partialSize: number;
 }
 
 export interface ModelSnapshot {
   entries: ModelEntry[];
-  partialSize: number;
   progress: {
+    modelId: string | null;
     busy: boolean;
     stage: string;
     downloaded: number;
