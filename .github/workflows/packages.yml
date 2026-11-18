@@ -1,0 +1,76 @@
+name: Native packages
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: amd64
+          - os: ubuntu-22.04-arm
+            arch: arm64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - if: inputs.tag != ''
+        run: |
+          bun run release:prepare "$TAG"
+          bun run version:check "$TAG"
+      - run: bun run check
+      - run: bun run test
+      - name: Build and verify Debian and AppImage
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          test "$(dpkg --print-architecture)" = "$ARCH"
+          bun scripts/prepare-linux-bundle.ts
+          bunx tauri build --config src-tauri/target/overlay-bundle.json --bundles deb,appimage -- --locked
+          version=$(jq -r .version package.json)
+          deb=(src-tauri/target/release/bundle/deb/*.deb)
+          image=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          test "${#deb[@]}" = 1 && test "${#image[@]}" = 1
+          bash scripts/debian-version.sh "${deb[0]}" "v$version"
+          test "$(dpkg-deb -f "${deb[0]}" Architecture)" = "$ARCH"
+          image_path=$(realpath "${image[0]}")
+          (cd "$RUNNER_TEMP" && "$image_path" --appimage-extract usr/lib/libgtk-layer-shell.so.0)
+          case "$ARCH" in amd64) machine="X86-64";; arm64) machine="AArch64";; esac
+          for binary in src-tauri/target/release/chime-desktop "$image_path" "$RUNNER_TEMP/squashfs-root/usr/lib/libgtk-layer-shell.so.0"; do
+            readelf -h "$binary" | grep -i "Machine:.*$machine"
+          done
+          mkdir -p packages
+          cp "${deb[0]}" "packages/Chime_${version}_${ARCH}.deb"
+          cp "$image_path" "packages/Chime_${version}_${ARCH}.AppImage"
+      - name: Build and verify Apple silicon DMG
+        if: runner.os == 'macOS'
+        run: |
+          test "$(uname -m)" = arm64
+          bunx tauri build --bundles dmg -- --locked
+          lipo -verify_arch arm64 src-tauri/target/release/bundle/macos/Chime.app/Contents/MacOS/chime-desktop
+          dmg=(src-tauri/target/release/bundle/dmg/*.dmg)
+          test "${#dmg[@]}" = 1
+          hdiutil verify "${dmg[0]}"
+          mkdir -p packages
+          cp "${dmg[0]}" "packages/Chime_$(jq -r .version package.json)_arm64.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Chime-${{ runner.os }}-${{ matrix.arch }}
+          path: packages/*
+          if-no-files-found: error

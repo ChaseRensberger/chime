@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { buttonVariants } from "#components/core/button-variants";
+import { releaseDownloads, type Downloads, type Target } from "../downloads";
+
+const targets = [
+  { value: "linux-x64", label: "Linux x64" },
+  { value: "linux-arm64", label: "Linux ARM64" },
+  { value: "macos", label: "macOS" },
+] as const;
 
 function Choices<T extends string>({
   label,
@@ -14,7 +21,7 @@ function Choices<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <fieldset className="grid min-w-0 grid-cols-2 rounded-sm bg-muted p-1">
+    <fieldset className="grid min-w-0 auto-cols-fr grid-flow-col rounded-sm bg-muted p-1">
       <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <label key={option.value} className="relative cursor-pointer">
@@ -36,9 +43,9 @@ function Choices<T extends string>({
 }
 
 export function InstallPanel({ repository }: { repository: string }) {
-  const [platform, setPlatform] = useState<"linux" | "macos">("linux");
+  const [platform, setPlatform] = useState<Target>("linux-x64");
   const [format, setFormat] = useState<"deb" | "appimage">("deb");
-  const [assets, setAssets] = useState<Partial<Record<"deb" | "appimage" | "dmg", string>>>({});
+  const [assets, setAssets] = useState<Downloads>({});
   useEffect(() => {
     const abort = new AbortController();
     async function load() {
@@ -48,32 +55,20 @@ export function InstallPanel({ repository }: { repository: string }) {
       );
       if (!response.ok) return;
       const release = await response.json();
-      const found: typeof assets = {};
-      for (const asset of release.assets ?? []) {
-        if (
-          asset.state !== "uploaded" ||
-          !asset.browser_download_url?.startsWith(`${repository}/releases/download/`)
-        )
-          continue;
-        const kind = /(?:amd64|x86_64)\.deb$/i.test(asset.name)
-          ? "deb"
-          : /(?:amd64|x86_64)\.AppImage$/i.test(asset.name)
-            ? "appimage"
-            : /(?:arm64|aarch64|universal)\.dmg$/i.test(asset.name)
-              ? "dmg"
-              : null;
-        if (kind) found[kind] = asset.browser_download_url;
-      }
+      const found = releaseDownloads(repository, release.assets ?? []);
       if (!abort.signal.aborted) {
         setAssets(found);
-        setPlatform(!found.deb && !found.appimage && found.dmg ? "macos" : "linux");
-        setFormat(found.deb ? "deb" : "appimage");
+        setPlatform(targets.find((t) => found[t.value])?.value ?? "linux-x64");
       }
     }
     void load().catch(() => {});
     return () => abort.abort();
   }, [repository]);
-  const download = assets[platform === "macos" ? "dmg" : format];
+  const packages = assets[platform];
+  const selected =
+    platform === "macos" ? "dmg" : packages?.[format] ? format : packages?.deb ? "deb" : "appimage";
+  const download = packages?.[selected];
+  const platformLabel = targets.find((t) => t.value === platform)!.label;
   return (
     <section
       aria-labelledby="download-title"
@@ -85,7 +80,7 @@ export function InstallPanel({ repository }: { repository: string }) {
         </h2>
         {download && (
           <span className="text-xs text-muted-foreground">
-            {platform === "linux" ? "Linux · x64" : "Apple silicon"}
+            {platform === "macos" ? "Apple silicon" : platformLabel}
           </span>
         )}
       </div>
@@ -97,14 +92,7 @@ export function InstallPanel({ repository }: { repository: string }) {
           <Choices
             label="Platform"
             value={platform}
-            options={(
-              [
-                { value: "linux", label: "Linux" },
-                { value: "macos", label: "macOS" },
-              ] as const
-            ).filter((option) =>
-              option.value === "linux" ? assets.deb || assets.appimage : assets.dmg,
-            )}
+            options={targets.filter((option) => assets[option.value])}
             onChange={setPlatform}
           />
           <span className="text-xs text-muted-foreground">Package</span>
@@ -115,13 +103,13 @@ export function InstallPanel({ repository }: { repository: string }) {
           ) : (
             <Choices
               label="Package"
-              value={format}
+              value={selected === "deb" ? "deb" : "appimage"}
               options={(
                 [
                   { value: "deb", label: "Debian" },
                   { value: "appimage", label: "AppImage" },
                 ] as const
-              ).filter((option) => assets[option.value])}
+              ).filter((option) => packages?.[option.value])}
               onChange={setFormat}
             />
           )}
@@ -133,7 +121,7 @@ export function InstallPanel({ repository }: { repository: string }) {
       >
         <DownloadSimpleIcon aria-hidden="true" />{" "}
         {download
-          ? `Get ${platform === "macos" ? "macOS Apple silicon" : `Linux x64 ${format === "deb" ? "Debian" : "AppImage"}`}`
+          ? `Get ${platform === "macos" ? "macOS Apple silicon" : `${platformLabel} ${selected === "deb" ? "Debian" : "AppImage"}`}`
           : "View releases"}
       </a>
     </section>

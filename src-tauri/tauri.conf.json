@@ -28,6 +28,9 @@
     "active": true,
     "targets": ["deb", "appimage"],
     "icon": ["icons/icon.png"],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
     "category": "Utility",
     "shortDescription": "Local voice dictation",
     "longDescription": "Transcribe speech locally with microphone capture, clipboard output, and searchable transcript history.",

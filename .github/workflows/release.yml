@@ -1,4 +1,4 @@
-name: Linux release
+name: Release
 on:
   push:
     tags: ["v*"]
@@ -11,40 +11,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  linux:
+  packages:
+    uses: ./.github/workflows/packages.yml
+    with:
+      tag: ${{ github.ref_name }}
+  draft:
+    needs: packages
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-      - name: Apply release version from tag
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          bun run release:prepare "$RELEASE_TAG"
-          bun run version:check "$RELEASE_TAG"
-      - run: bun run check
-      - run: bun run test
-      - name: Include the recording overlay runtime
-        run: bun scripts/prepare-linux-bundle.ts
-      - name: Build and verify Linux packages
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          bunx tauri build --config src-tauri/target/overlay-bundle.json --bundles deb,appimage -- --locked
-          bash scripts/debian-version.sh src-tauri/target/release/bundle/deb/*.deb "$TAG"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Chime-*
+          path: packages
+          merge-multiple: true
       - name: Upload verified packages to draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          version=${TAG#v}
+          files=(packages/Chime_"$version"_{amd64,arm64}.{deb,AppImage} "packages/Chime_${version}_arm64.dmg")
+          for file in "${files[@]}"; do test -s "$file"; done
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             flags=()
             [[ "$TAG" != *-* ]] || flags+=(--prerelease)
             gh release create "$TAG" --verify-tag --draft --title "Chime $TAG" --generate-notes \
-              --notes "Linux x86_64 (AVX2). Wayland clipboard and paste require wl-clipboard and wtype. Download a speech model in Settings after installation." "${flags[@]}"
+              --notes "Linux x64 (AVX2), Linux ARM64, and macOS Apple silicon. Wayland clipboard and paste require wl-clipboard and wtype. Download a speech model in Settings after installation." "${flags[@]}"
           fi
           test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
-          gh release upload "$TAG" src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage --clobber
+          gh release upload "$TAG" "${files[@]}" --clobber
