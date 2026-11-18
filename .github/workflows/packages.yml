@@ -78,7 +78,7 @@ jobs:
           contents="$mount/Chime.app/Contents"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$contents/Info.plist")" = "$MACOSX_DEPLOYMENT_TARGET"
           binary="$contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$contents/Info.plist")"
-          lipo -verify_arch arm64 "$binary"
+          lipo "$binary" -verify_arch arm64
           test "$(xcrun vtool -arch arm64 -show-build "$binary" | awk '$1 == "minos" {print $2}')" = "$MACOSX_DEPLOYMENT_TARGET"
           mkdir -p packages
           cp "${dmg[0]}" "packages/Chime_$(jq -r .version package.json)_arm64.dmg"
