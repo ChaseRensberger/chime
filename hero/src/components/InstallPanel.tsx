@@ -45,7 +45,10 @@ function Choices<T extends string>({
 export function InstallPanel({ repository }: { repository: string }) {
   const [platform, setPlatform] = useState<Target>("linux-x64");
   const [format, setFormat] = useState<"deb" | "appimage">("deb");
-  const [assets, setAssets] = useState<Downloads>({});
+  const [{ assets, tag }, setRelease] = useState<{ assets: Downloads; tag: string }>({
+    assets: {},
+    tag: "",
+  });
   useEffect(() => {
     const abort = new AbortController();
     async function load() {
@@ -57,7 +60,7 @@ export function InstallPanel({ repository }: { repository: string }) {
       const release = await response.json();
       const found = releaseDownloads(repository, release.assets ?? []);
       if (!abort.signal.aborted) {
-        setAssets(found);
+        setRelease({ assets: found, tag: release.tag_name });
         setPlatform(targets.find((t) => found[t.value])?.value ?? "linux-x64");
       }
     }
@@ -77,6 +80,7 @@ export function InstallPanel({ repository }: { repository: string }) {
       <div className="mb-3 flex items-baseline justify-between gap-3 border-b pb-3">
         <h2 id="download-title" className="text-base font-semibold tracking-tight">
           Download
+          {download && tag && <span className="ml-2 text-xs text-muted-foreground">{tag}</span>}
         </h2>
         {download && (
           <span className="text-xs text-muted-foreground">
