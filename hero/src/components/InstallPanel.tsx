@@ -80,7 +80,7 @@ export function InstallPanel({ repository }: { repository: string }) {
         </h2>
         {download && (
           <span className="text-xs text-muted-foreground">
-            {platform === "macos" ? "Apple silicon" : platformLabel}
+            {platform === "macos" ? "Apple silicon · macOS 15+" : platformLabel}
           </span>
         )}
       </div>

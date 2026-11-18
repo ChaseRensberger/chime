@@ -34,6 +34,9 @@ jobs:
           bun run release:prepare "$TAG"
           bun run version:check "$TAG"
       - run: bun run check
+      - name: Set macOS deployment target for native tests
+        if: runner.os == 'macOS'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=$(jq -er .bundle.macOS.minimumSystemVersion src-tauri/tauri.conf.json)" >> "$GITHUB_ENV"
       - run: bun run test
       - name: Build and verify Debian and AppImage
         if: runner.os == 'Linux'
@@ -50,7 +53,9 @@ jobs:
           bash scripts/debian-version.sh "${deb[0]}" "v$version"
           test "$(dpkg-deb -f "${deb[0]}" Architecture)" = "$ARCH"
           image_path=$(realpath "${image[0]}")
-          (cd "$RUNNER_TEMP" && "$image_path" --appimage-extract usr/lib/libgtk-layer-shell.so.0)
+          dpkg-deb -x "${deb[0]}" "$RUNNER_TEMP/chime-deb"
+          (cd "$RUNNER_TEMP" && "$image_path" --appimage-extract > /dev/null)
+          python3 scripts/check-linux-abi.py "$RUNNER_TEMP/chime-deb" "$image_path" "$RUNNER_TEMP/squashfs-root"
           case "$ARCH" in amd64) machine="X86-64";; arm64) machine="AArch64";; esac
           for binary in src-tauri/target/release/chime-desktop "$image_path" "$RUNNER_TEMP/squashfs-root/usr/lib/libgtk-layer-shell.so.0"; do
             readelf -h "$binary" | grep -i "Machine:.*$machine"
@@ -63,10 +68,18 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           bunx tauri build --bundles dmg -- --locked
-          lipo -verify_arch arm64 src-tauri/target/release/bundle/macos/Chime.app/Contents/MacOS/chime-desktop
           dmg=(src-tauri/target/release/bundle/dmg/*.dmg)
           test "${#dmg[@]}" = 1
           hdiutil verify "${dmg[0]}"
+          mount="$RUNNER_TEMP/chime-dmg"
+          mkdir -p "$mount"
+          hdiutil attach "${dmg[0]}" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          contents="$mount/Chime.app/Contents"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$contents/Info.plist")" = "$MACOSX_DEPLOYMENT_TARGET"
+          binary="$contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$contents/Info.plist")"
+          lipo -verify_arch arm64 "$binary"
+          test "$(xcrun vtool -arch arm64 -show-build "$binary" | awk '$1 == "minos" {print $2}')" = "$MACOSX_DEPLOYMENT_TARGET"
           mkdir -p packages
           cp "${dmg[0]}" "packages/Chime_$(jq -r .version package.json)_arm64.dmg"
       - uses: actions/upload-artifact@v4

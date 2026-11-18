@@ -29,7 +29,7 @@
     "targets": ["deb", "appimage"],
     "icon": ["icons/icon.png"],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "15.0"
     },
     "category": "Utility",
     "shortDescription": "Local voice dictation",
